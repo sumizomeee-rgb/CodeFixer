@@ -2,6 +2,8 @@
 
 CodeFixer 是一个通用的 Bug 自动修复与交付平台。
 
+Web 管理界面与 API 同源，第一版正式服务端口统一为 `9522`。
+
 它从外部工单系统收录 Bug，通过独立的 Discovery 与 Repair Agent 自主反查和修改唯一代码源，经过验证与 Review 后，按项目配置生成 Patch 和/或创建普通 GitLab MR。
 
 项目当前处于设计阶段，产品语义、状态机、Artifact 协议、并发模型和交付边界见：

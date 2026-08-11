@@ -1,7 +1,7 @@
 # CodeFixer 产品与技术设计 SPEC
 
 > 文档状态：V2 初版
-> 最后更新：2026-08-11
+> 最后更新：2026-08-12
 > 适用范围：CodeFixer 第一版实现与后续扩展
 > 本文是产品语义、任务协议和技术边界的唯一设计基准。
 
@@ -43,6 +43,7 @@ CodeFixer 不是某个业务项目的专用脚本，也不是一个把工单和�
 |---|---|
 | 产品名称 | `CodeFixer`，不绑定任何业务项目 |
 | 管理形态 | Web 管理界面 |
+| 默认服务端口 | `9522`，Web 与 API 同源 |
 | 执行模式 | 全自动 / 待我开始 |
 | 手动启动语义 | 点击一次开始后，任务自动执行完整流程，不逐阶段等待审批 |
 | Bug 与修改源 | 一个 Bug 任务必须且只能绑定一个修改源 |
@@ -86,6 +87,18 @@ Agent 不获得 GitLab Token，不自行创建远程分支或 MR。平台只相�
 
 第一版使用稳定接口和仓库内适配器注册表。新增平台时实现新适配器，不在核心状态机中增加 `if tapd`、`if svn` 一类业务分支；第一版不建设动态插件安装市场。
 
+### 3.8 吸收经验，不依赖参考工程
+
+本文已经把调研阶段验证过的设计经验收敛为 CodeFixer 自身规范，包括双阶段 Agent、固定入口文档、依赖预检、配置分层、Linux 服务化部署和 GitLab Cherry-pick MR 协议。参考工程与一次性脚本只属于设计输入，不是构建或运行依赖。
+
+CodeFixer 的仓库、安装包和部署文档必须自包含：
+
+- 不得要求读取仓库之外的本地项目、提示词文档或脚本才能理解或运行系统。
+- 不得 import、调用或复制执行某台机器上的参考脚本；相关行为必须由仓库内代码和本 SPEC 定义。
+- 公开默认配置不得出现开发者盘符、用户名、内网地址或机器绝对路径。
+- 运行所需第三方程序、服务和包必须通过依赖清单、适配器契约与 Preflight 明示。
+- 当前机器的路径和凭据只允许出现在不入 Git 的本地覆盖与 Secret 存储中。
+
 ## 4. 核心领域模型
 
 ### 4.1 TicketProvider
@@ -128,7 +141,8 @@ Agent 不获得 GitLab Token，不自行创建远程分支或 MR。平台只相�
 一个任务必须绑定且只能绑定一个修改源。修改源定义：
 
 - 类型：`git` 或 `svn`。
-- 当前机器上的仓库/工作副本位置。
+- `repositoryRef`：引用当前机器 `pathBindings` 中的仓库/工作副本位置。
+- `executableRef`：引用当前机器 `executableBindings` 中的 Git/SVN CLI；内置适配器默认分别使用 `git-cli`、`svn-cli`，项目可以显式覆盖。
 - 基线获取方式。
 - 隔离工作区策略。
 - 允许读取和修改的根目录。
@@ -158,6 +172,8 @@ Agent Runtime 只负责：
 - 配置该阶段的工作目录和工具权限。
 - 启动、超时、取消并清理子进程。
 - 解析统一的运行结果、费用和 usage。
+
+每个 Agent profile 必须声明 `executableRef`，引用当前机器 `executableBindings` 中的 CLI 命令与版本检查规则；不得在共享项目配置中保存某台机器的 CLI 绝对路径。
 
 Claude Code、Codex、OpenCode 分别实现适配器。适配器不得预读业务文件、替 Agent 选择仓库或改写阶段工作流。
 
@@ -396,7 +412,7 @@ data/tasks/<task-id>/
 
 ```text
 完整读取并执行此文件中的任务：
-/absolute/path/to/data/tasks/<task-id>/runs/<run-id>/stages/discovery/entry.md
+<执行机生成的任务入口绝对路径>
 ```
 
 入口文件写明：
@@ -628,11 +644,13 @@ verification:
   timeoutSeconds: 1200
   steps:
     - id: unit
-      command: ["python", "-m", "pytest"]
+      executableRef: python-cli
+      args: ["-m", "pytest"]
       workingDirectory: "."
       required: true
     - id: build
-      command: ["npm", "run", "build"]
+      executableRef: npm-cli
+      args: ["run", "build"]
       workingDirectory: "frontend"
       required: true
 ```
@@ -671,7 +689,7 @@ Review 输出 `approved`、`needs_repair` 或 `rejected`。`needs_repair` 在预
 ```yaml
 type: patch
 id: primary-patch
-outputDirectory: "/configured/output/path"
+outputDirectoryRef: primary-patches
 filenameTemplate: "{ticket_provider}-{ticket_id}-{run_id}.patch"
 overwrite: false
 ```
@@ -683,7 +701,7 @@ overwrite: false
 - 是否允许覆盖。
 - Git 或 SVN 对应的 Patch 格式选项。
 
-输出目录是当前部署机路径，由管理员配置并在保存时执行可写性预检。工单内容不能直接成为未净化路径。
+`outputDirectoryRef` 引用顶层 `pathBindings`，不在可共享项目配置中嵌入机器路径。解析后的输出目录由管理员配置并在保存时执行可写性预检；工单内容不能直接成为未净化路径。
 
 ### 12.2 执行
 
@@ -716,7 +734,7 @@ type: gitlabMr
 id: main-gitlab-mr
 connectionRef: company-gitlab
 projectPath: group/project
-materializationRepository: "/local/git/repository"
+materializationRepositoryRef: git-materialization
 pathMappings:
   - from: "."
     to: "."
@@ -734,7 +752,7 @@ maxTargetConcurrency: 2
 
 - GitLab connection 引用。
 - GitLab project path/ID。
-- 修改源到 Git 仓库的物化路径与路径映射。
+- 修改源到 Git 仓库的物化目录引用与路径映射。
 - 一个或多个目标分支。
 - MR assignee。
 - MR 标题和描述模板。
@@ -918,8 +936,8 @@ Prompt plan 冻结：
 
 采用三层：
 
-1. Git 管理的默认配置：只放跨机器默认值和 Schema 版本。
-2. 当前机器本地配置：路径、端口、CLI 位置、项目启停和 Web 保存项，不进 Git。
+1. Git 管理的默认配置：只放跨机器默认值、正式服务端口和 Schema 版本。
+2. 当前机器本地配置：路径、CLI 位置、项目启停和 Web 保存项，不进 Git。
 3. Secret 配置：Token、API Key 和凭据引用，不进入普通配置响应和日志。
 
 本地配置对默认配置做深度合并；保存时只写相对默认值的最小覆盖，并使用同目录临时文件加原子替换。
@@ -928,6 +946,13 @@ Prompt plan 冻结：
 
 ```yaml
 schemaVersion: 1
+
+server:
+  host: "0.0.0.0"
+  port: 9522
+
+storage:
+  dataRoot: "./data"
 
 execution:
   mode: awaitingStart
@@ -938,8 +963,58 @@ ticketProviders: []
 agentProfiles: []
 knowledgeProviders: []
 connections: []
+executableBindings:
+  git-cli:
+    command: ["git"]
+    versionArgs: ["--version"]
+    versionConstraint: null
+  svn-cli:
+    command: ["svn"]
+    versionArgs: ["--version", "--quiet"]
+    versionConstraint: null
+  python-cli:
+    command: ["python"]
+    versionArgs: ["--version"]
+    versionConstraint: null
+  npm-cli:
+    command: ["npm"]
+    versionArgs: ["--version"]
+    versionConstraint: null
+  claude-code-cli:
+    command: ["claude"]
+    versionArgs: ["--version"]
+    versionConstraint: null
+  codex-cli:
+    command: ["codex"]
+    versionArgs: ["--version"]
+    versionConstraint: null
+  opencode-cli:
+    command: ["opencode"]
+    versionArgs: ["--version"]
+    versionConstraint: null
+pathBindings:
+  primary-patches: "./patches"
+  git-materialization: "./repositories/git-materialization"
 projects: []
 ```
+
+`server.port=9522` 是 CodeFixer 第一版的正式服务约定，前端、API、健康检查、systemd 和部署文档统一使用该端口。自动化测试可临时注入随机端口，不能改写公开默认值或生产服务约定。
+
+`storage.dataRoot` 的相对路径固定相对“有效基础配置文件所在目录”解析，禁止相对进程当前工作目录解析。其规范化绝对路径在启动后不可热修改；变更数据根目录需要停服、迁移并重新启动。
+
+`pathBindings` 的相对路径统一相对 `storage.dataRoot` 解析。ModificationSource 使用 `repositoryRef`，最终动作使用各自的目录引用；管理员可以在不入 Git 的本地覆盖中为当前机器设置绝对路径。可共享项目与最终动作只保存引用 ID。删除或修改引用前必须检查使用者，解析失败时配置不得进入 ready 状态。
+
+`executableBindings` 是所有外部可执行程序的机器注册表。每项包含命令参数数组、版本查询参数和可选版本约束；`command` 可以是部署用户 `PATH` 中的命令名，也可以只在本地覆盖中设置为当前机器绝对路径。Git/SVN 适配器、Agent profile 与验证命令通过 `executableRef` 引用它，平台不自行猜测参考工程里的安装位置。启用 Claude Code、Codex 或 OpenCode 时，必须存在对应 CLI binding。
+
+版本检查使用以下确定性协议：
+
+1. 以参数数组执行 `command + versionArgs`，超时、非零退出码或无法启动均为失败。
+2. 按 stdout、stderr 的顺序，在首个非空输出中提取第一个 `主版本.次版本[.修订版本[.构建版本]]` 数字串；binding 可用 `versionRegex` 覆盖提取规则，但必须包含命名捕获组 `version`。
+3. `versionConstraint` 只支持 `> >= = <= <` 与逗号连接的 AND 条件，例如 `>=2.40,<3.0`。
+4. 比较时把 2 至 4 段十进制整数补零到 4 段后按数值逐段比较；不把供应商后缀参与比较。
+5. 配置了约束却无法提取或比较版本时检查失败；约束为 `null` 时仍必须成功取得并记录版本，但只产生“未锁最低版本”的 warning。
+
+每个正式发布版本必须把其生产启用依赖的已验证最低版本写入默认配置；上例中的 `null` 只表示当前 SPEC 阶段尚未冻结实现版本，不允许发布流程忽略该 warning。
 
 `execution.mode`：
 
@@ -959,6 +1034,34 @@ projects: []
 - 配置版本/hash。
 
 运行中热重载只影响后续 TaskRun。
+
+### 16.4 依赖检查与 Readiness
+
+依赖检查是平台能力，不是部署人员自行阅读外部文档后完成的隐式步骤。它分为两层：
+
+1. 全局启动检查由 `GET /api/readiness` 暴露，决定服务是否可接收新任务。
+2. 项目 Preflight 由保存配置、手工测试、切换全自动和 TaskRun `prepare` 调用，决定具体项目及最终动作是否可执行。
+
+全局检查至少覆盖：
+
+- 配置 Schema、Secret 引用和数据库迁移有效，SQLite WAL 可读写。
+- `storage.dataRoot` 的解析基准稳定，数据根目录、Artifact、Workspace、日志和所有 `pathBindings` 可创建、可写且剩余空间高于阈值。
+- 正式进程能够绑定 `9522`，生产模式下前端构建产物存在。
+- 当前操作系统支持所选进程隔离与取消方式。
+- 已启用的 Git、SVN 和 Agent CLI 均有 `executableBindings`，可发现、版本满足约束，且在部署用户下具备非交互认证能力。
+- 必需的外部服务可以解析和连接；检查结果只报告凭据是否可用，不输出凭据内容。
+
+项目 Preflight 至少覆盖：
+
+- TicketProvider 可连接、增量游标能力与筛选字段有效。
+- 唯一 ModificationSource 的 `repositoryRef` 与 `executableRef` 可解析，仓库类型和 CLI 类型匹配，基线可读取，隔离工作区可创建。
+- Agent profile 的 `executableRef` 可解析，模型、预算、入口模板和输出 Schema 都存在。
+- 验证命令的可执行文件、参数、工作目录和超时有效。
+- Patch 的目录引用可解析且目标目录可写。
+- GitLab connection、项目、assignee、目标分支、API 权限和 commit 物化仓库均有效。
+- 允许修改路径、路径映射和最终动作 ID 不冲突。
+
+每个检查返回稳定的 check ID、`ready|warning|failed`、用户可读原因和修复建议。必需依赖失败时项目为 `not_ready`：全自动调度不领取该项目的新任务，手工开始按钮禁用；运行前状态变化则 TaskRun 以 `configuration_not_ready` 失败并保留检查证据。可选知识源不可用只产生 warning，并在任务档案中明确标注降级，不冒充查询成功。
 
 ## 17. 持久化模型
 
@@ -1139,6 +1242,7 @@ WS     /api/ws
 - Windows 用于本地开发和测试。
 - Linux 部署机运行正式服务和 Agent CLI。
 - React/Vite 构建产物由 FastAPI 同源托管。
+- FastAPI/Uvicorn 对外监听 `9522`，健康检查地址为 `http://<部署主机>:9522/api/health`。
 - 第一版使用一个 Uvicorn Worker；后台调度依赖 SQLite lease，不依赖多进程内存共享。
 - 使用用户级 systemd 服务，`Restart=on-failure`。
 
@@ -1164,6 +1268,7 @@ WS     /api/ws
 - Windows 使用等价的进程组/Job 控制。
 - systemd 停止超时必须大于平台优雅清理窗口。
 - 服务启动时先完成数据库迁移、目录权限和 Worker lease 恢复。
+- systemd 的启动后检查必须访问本机 `9522` 的 health 与 readiness；端口占用时服务启动失败并给出占用诊断。
 - 用户级服务需要确认 lingering，保证机器重启后无需交互登录即可启动。
 
 ### 21.5 发布链路
@@ -1303,6 +1408,8 @@ Windows 开发与测试
 13. 服务重启不会重复运行同一阶段或重复创建 MR。
 14. Windows 开发和 Linux 正式运行使用同一依赖锁，机器路径与 Secret 不进入公开仓库。
 15. Web 能清楚展示阶段、尝试、失败、无修改证据、部分交付和外部副作用。
+16. Web 与 API 的公开默认和正式部署端口统一为 `9522`。
+17. 仓库无需任何本机参考项目或参考脚本即可构建、部署和理解；所有必需依赖都有机器可读声明及 Readiness/Preflight 结果。
 
 ## 26. 规范标识与关键定义
 
