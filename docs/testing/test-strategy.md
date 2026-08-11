@@ -1,6 +1,6 @@
 # CodeFixer 测试、回归与自测策略
 
-> 文档状态：V1
+> 文档状态：V1.1
 > 最后更新：2026-08-12
 > 关联：`docs/design-spec.md`、`docs/engineering-readiness-spec.md`
 
@@ -189,7 +189,7 @@ Playwright screenshot baseline。
 
 ### 2.8 Real-System Smoke
 
-连接真实 Redmine/TAPD/GitLab/Agent 的测试属于受控 smoke，不进入普通 PR。
+连接真实 Redmine/TAPD/GitLab/Agent 的测试属于受控 smoke，不进入每次 direct-main 提交的默认快速阻断门禁。
 
 运行：
 
@@ -499,7 +499,7 @@ Migration 发布后不可篡改历史脚本。
 - cancellation。
 - usage。
 
-这层 PR blocking。
+这层属于 direct-main 提交前阻断门禁。
 
 ### 11.2 Real CLI Smoke
 
@@ -511,7 +511,7 @@ Migration 发布后不可篡改历史脚本。
 - read-only/write permission。
 - timeout/cancel。
 
-不要求每个 PR 消耗真实模型额度。
+不要求每次 main 施工提交消耗真实模型额度。
 
 ## 12. Ticket Provider Tests
 
@@ -723,7 +723,7 @@ execution-mode-confirm
 - Snapshot 放版本控制。
 - 差异报告保存 CI artifact。
 - 禁止 CI 自动更新 baseline。
-- 有意视觉变更必须同 PR 更新并说明。
+- 有意视觉变更必须在同一施工提交或紧邻的 golden 更新提交中更新，并在阶段自测报告说明原因。
 - 大面积 diff 必须人工打开实际截图审阅。
 - 不稳定元素用 fixture/styling freeze，不通过提高巨大容差掩盖。
 
@@ -808,7 +808,7 @@ Flaky 不是“再跑一次就算过”。
 
 重试次数只用于诊断，不作为绿色门禁的默认掩盖。
 
-## 26. PR Test Selection
+## 26. Direct-Main Pre-Commit Test Selection
 
 默认快速门禁：
 
@@ -833,9 +833,11 @@ build
 
 如果无法可靠判断 affected scenarios，宁可多跑，不允许漏跑核心回归。
 
+已知失败时禁止主动提交到 `main`。如果 push 后 CI 才发现失败，则暂停无关 Feature，优先恢复 `main` 为绿色。
+
 ## 27. Main / Nightly
 
-Main：
+Main 每次 push：
 
 - full unit/contract/integration。
 - full scenario。
