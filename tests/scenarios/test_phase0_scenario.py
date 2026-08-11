@@ -1,10 +1,9 @@
 import json
 from pathlib import Path
 
-from fastapi.testclient import TestClient
-
 from codefixer.config import AppConfig, LoadedConfig
 from codefixer.main import create_app
+from fastapi.testclient import TestClient
 
 
 def test_scn_000_phase0_foundation_ready(tmp_path: Path):
