@@ -150,6 +150,14 @@ class ConfigStore:
             return {}
         return {str(key): {"configured": bool(value)} for key, value in secrets.items()}
 
+    def get_secret(self, key: str) -> str | None:
+        raw = _read_json(self._secrets_path)
+        secrets = raw.get("secrets", {})
+        if not isinstance(secrets, dict):
+            return None
+        value = secrets.get(key)
+        return str(value) if value is not None else None
+
     def set_secret(self, key: str, value: str) -> None:
         if not key or "/" in key or "\\" in key:
             raise ValueError("invalid secret key")

@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from codefixer.api.errors import install_error_handlers
 from codefixer.api.projects import router as projects_router
+from codefixer.api.providers import router as providers_router
 from codefixer.api.secrets import router as secrets_router
 from codefixer.api.settings import router as settings_router
 from codefixer.api.system import router as system_router
@@ -33,6 +34,7 @@ def create_app(loaded_config: LoadedConfig | None = None) -> FastAPI:
     app.include_router(system_router)
     app.include_router(settings_router)
     app.include_router(projects_router)
+    app.include_router(providers_router)
     app.include_router(secrets_router)
     app.include_router(tasks_router)
 
