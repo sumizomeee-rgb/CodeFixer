@@ -36,11 +36,12 @@ def venv_python() -> Path:
     return VENV / "bin" / "python"
 
 
-def find_npm() -> str:
-    npm = shutil.which("npm") or shutil.which("npm.cmd")
-    if npm is None:
-        raise SystemExit("npm not found. Install Node.js/npm first.")
-    return npm
+def find_command(*names: str) -> str:
+    for name in names:
+        command = shutil.which(name)
+        if command is not None:
+            return command
+    raise SystemExit(f"Required command not found: {' / '.join(names)}")
 
 
 def main() -> int:
@@ -60,22 +61,23 @@ def main() -> int:
     if sys.version_info < (3, 12):
         raise SystemExit("CodeFixer requires Python 3.12+")
 
-    npm = find_npm()
+    npm = find_command("npm", "npm.cmd")
     if not venv_python().exists():
         run([sys.executable, "-m", "venv", str(VENV)])
 
     py = str(venv_python())
-    install_target = "-e ./backend" if args.production else "-e ./backend[dev]"
-    run([py, "-m", "pip", "install", install_target], cwd=ROOT)
+    backend_target = "./backend" if args.production else "./backend[dev]"
+    run([py, "-m", "pip", "install", "-e", backend_target], cwd=ROOT)
 
     # npm is local-by-default: dependencies land in frontend/node_modules.
     run([npm, "ci"], cwd=FRONTEND)
 
     if args.with_browser:
+        npx = find_command("npx", "npx.cmd")
         browser_env = os.environ.copy()
         # Playwright's documented hermetic mode keeps Chromium inside node_modules.
         browser_env["PLAYWRIGHT_BROWSERS_PATH"] = "0"
-        run([npm, "exec", "playwright", "install", "chromium"], cwd=FRONTEND, env=browser_env)
+        run([npx, "playwright", "install", "chromium"], cwd=FRONTEND, env=browser_env)
 
     if args.production:
         run([npm, "run", "build"], cwd=FRONTEND)
