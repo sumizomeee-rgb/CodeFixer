@@ -8,7 +8,7 @@ test('control tower is interactive', async ({ page }) => {
   await page.getByRole('button', { name: '切换主题' }).click()
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
   await page.getByRole('button', { name: '项目' }).click()
-  await expect(page.getByRole('heading', { name: '项目' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '项目', exact: true })).toBeVisible()
   await expect(page.getByText('还没有项目')).toBeVisible()
 })
 
