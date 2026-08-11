@@ -1,9 +1,15 @@
 import { createRoot } from 'react-dom/client'
-import { expect, test } from 'vitest'
+import { expect, test, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import App from '../src/App'
 
 test('renders repair control tower semantics', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const url=String(input)
+    if(url.includes('/api/settings')) return new Response(JSON.stringify({config:{schemaVersion:1,execution:{mode:'automatic',maxConcurrentTasks:3,maxRepairAttempts:3},pathBindings:{},executableBindings:{},agentProfiles:[],projects:[]},secrets:{},etag:'test'}),{status:200,headers:{'Content-Type':'application/json'}})
+    if(url.includes('/api/readiness')) return new Response(JSON.stringify({ready:true,status:'ready',checks:[]}),{status:200,headers:{'Content-Type':'application/json'}})
+    return new Response('{}',{status:200,headers:{'Content-Type':'application/json'}})
+  }))
   const root = document.createElement('div')
   document.body.appendChild(root)
   createRoot(root).render(<App />)

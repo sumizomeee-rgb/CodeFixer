@@ -1,56 +1,40 @@
 import { useEffect, useState } from 'react'
+import { ModeController } from './design-system/ModeController'
+import type { ExecutionMode } from './entities/config'
+import { api } from './lib/api'
+import { DashboardPage } from './pages/DashboardPage'
+import { ProjectsPage } from './pages/ProjectsPage'
+import { SettingsPage } from './pages/SettingsPage'
 
-type StageState = 'done' | 'running' | 'queued' | 'failed'
+type PageId = 'dashboard'|'tasks'|'projects'|'sources'|'settings'
 
-type Stage = { label: string; meta: string; state: StageState }
-
-const stages: Stage[] = [
-  { label: 'Prepare', meta: '1.2s', state: 'done' },
-  { label: 'Discovery', meta: '42s', state: 'done' },
-  { label: 'Repair', meta: '02:18', state: 'running' },
-  { label: 'Verify', meta: 'queued', state: 'queued' },
-  { label: 'Review', meta: 'queued', state: 'queued' },
-  { label: 'Deliver', meta: 'queued', state: 'queued' },
-]
-
-function StageRail() {
-  return <div className="stage-rail" aria-label="任务阶段">{stages.map((stage, index) => <div className={`stage stage-${stage.state}`} key={stage.label}>
-    <div className="rail-line" aria-hidden="true" />
-    <div className="rail-node"><span>{index + 1}</span></div>
-    <strong>{stage.label}</strong><small>{stage.meta}</small>
-  </div>)}</div>
-}
-
-function ModeController() {
-  return <button className="mode-controller"><span className="mode-dot" />全自动 <kbd>⌘⇧A</kbd></button>
-}
-
-function Metric({value,label,tone='default'}:{value:string,label:string,tone?:string}) {
-  return <div className={`metric metric-${tone}`}><span>{value}</span><small>{label}</small></div>
-}
-
-function TaskCard({id,title,status='running'}:{id:string,title:string,status?:string}) {
-  return <article className="task-card">
-    <div className="task-top"><div><span className="ticket">{id}</span><h3>{title}</h3></div><span className={`status-pill ${status}`}>{status==='running'?'施工中':'需要处理'}</span></div>
-    <div className="task-meta"><span>Product / Lua</span><span>Git · trunk@8a31c42</span><span>Claude Code</span></div>
-    <StageRail />
-    <div className="task-footer"><span>Repair loop ×1</span><span className="mono">elapsed 03:11</span></div>
-  </article>
-}
-
-function App() {
+export default function App() {
   const [dark,setDark] = useState(false)
+  const [page,setPage] = useState<PageId>('dashboard')
+  const [mode,setMode] = useState<ExecutionMode>('automatic')
+  const [etag,setEtag] = useState('')
+  const [ready,setReady] = useState<boolean|null>(null)
+  const [confirmMode,setConfirmMode] = useState(false)
+  const [toast,setToast] = useState('')
+
   useEffect(()=>{ document.documentElement.dataset.theme = dark ? 'dark' : 'light' },[dark])
+  useEffect(()=>{
+    api.settings().then(r=>{setMode(r.config.execution.mode);setEtag(r.etag)}).catch(()=>{})
+    api.readiness().then(r=>setReady(r.ready)).catch(()=>setReady(false))
+  },[])
+
+  const toggleMode=async()=>{
+    if(!etag){setToast('配置尚未加载，稍后重试');return}
+    const next:ExecutionMode=mode==='automatic'?'awaitingStart':'automatic'
+    try{const r=await api.setExecutionMode(next,etag);setMode(r.mode);setEtag(r.etag);setConfirmMode(false);setToast(next==='automatic'?'已切换为全自动':'已切换为待我开始')}
+    catch(e){setToast(e instanceof Error?e.message:'模式切换失败')}
+  }
+
   return <div className="app-shell">
-    <header className="topbar"><div className="brand"><span className="mark"><i/><i/><i/></span><div><b>CodeFixer</b><small>REPAIR CONTROL TOWER</small></div></div><ModeController/><div className="top-actions"><span className="health"><i/>系统就绪</span><button className="icon-btn" aria-label="切换主题" onClick={()=>setDark(v=>!v)}>{dark?'☀':'◐'}</button></div></header>
-    <aside className="navrail"><button className="nav-active">⌁<span>控制台</span></button><button>≡<span>任务</span></button><button>◇<span>项目</span></button><button>⇄<span>来源</span></button><button>⚙<span>系统</span></button></aside>
-    <main><section className="hero"><div><span className="eyebrow">WED · AUG 12</span><h1>维修控制台</h1><p>把每一个 Bug 变成有证据、可验证、可交付的修复。</p></div><div className="slots"><span>并发槽</span><b>2 / 3</b><div className="slotbar"><i/><i/><i className="empty"/></div></div></section>
-      <section className="metrics"><Metric value="12" label="24h 已交付" tone="success"/><Metric value="3" label="运行中" tone="running"/><Metric value="2" label="无需修改" tone="nochange"/><Metric value="1" label="需要处理" tone="failed"/><Metric value="$4.82" label="Agent 费用"/></section>
-      <section className="content-grid"><div><div className="section-head"><div><span className="signal-kicker">LIVE SIGNAL</span><h2>正在维修</h2></div><button className="ghost">查看全部 18 →</button></div><div className="task-stack"><TaskCard id="TAPD #124902" title="【4.7】【商城】购买礼包后偶现红点未刷新"/><TaskCard id="RM #98142" title="切换角色后音频遮挡参数未恢复"/></div></div>
-      <aside className="attention"><div className="section-head"><div><span className="signal-kicker">ATTENTION</span><h2>需要处理</h2></div></div><div className="failure-card"><span className="failure-code">GITLAB · PARTIAL DELIVERY</span><h3>2 / 3 个目标分支已创建 MR</h3><p>release/4.7 在 cherry-pick 时产生冲突。已成功的 MR 保留，不会重复创建。</p><div className="side-effects"><b>外部副作用</b><span>✓ trunk · MR !4812</span><span>✓ release/4.6 · MR !4813</span><span className="bad">× release/4.7 · conflict</span></div><button className="primary">查看并重试失败目标</button></div>
-      <div className="evidence-card"><span className="signal-kicker teal">NO CHANGE</span><h3>当前基线无需修改</h3><p>已有 2 项当前状态证据，并通过独立 Review。</p><div className="evidence-row"><span>基线</span><code>4d92e9a</code></div><div className="evidence-row"><span>证据</span><b>2 / 2</b></div></div></aside></section>
-    </main>
+    <header className="topbar"><div className="brand"><span className="mark"><i/><i/><i/></span><div><b>CodeFixer</b><small>REPAIR CONTROL TOWER</small></div></div><ModeController mode={mode} onClick={()=>setConfirmMode(true)}/><div className="top-actions"><span className={`health ${ready===false?'health-failed':''}`}><i/>{ready===null?'检查中':ready?'系统就绪':'系统未就绪'}</span><button className="icon-btn" aria-label="切换主题" onClick={()=>setDark(v=>!v)}>{dark?'☀':'◐'}</button></div></header>
+    <aside className="navrail"><button className={page==='dashboard'?'nav-active':''} onClick={()=>setPage('dashboard')} aria-label="控制台">⌁<span>控制台</span></button><button className={page==='tasks'?'nav-active':''} onClick={()=>setPage('tasks')} aria-label="任务">≡<span>任务</span></button><button className={page==='projects'?'nav-active':''} onClick={()=>setPage('projects')} aria-label="项目">◇<span>项目</span></button><button className={page==='sources'?'nav-active':''} onClick={()=>setPage('sources')} aria-label="来源">⇄<span>来源</span></button><button className={page==='settings'?'nav-active':''} onClick={()=>setPage('settings')} aria-label="系统设置">⚙<span>系统</span></button></aside>
+    <main>{page==='dashboard'?<DashboardPage/>:page==='projects'?<ProjectsPage/>:page==='settings'?<SettingsPage onModeChanged={(m,e)=>{setMode(m);setEtag(e)}}/>:<section className="page-stack"><div className="page-heading"><div><span className="eyebrow">COMING NEXT</span><h1>{page==='tasks'?'任务':'工单来源'}</h1><p>这一纵切将在下一施工阶段接入持久化任务与 Provider。</p></div></div></section>}</main>
+    {confirmMode&&<div className="modal-backdrop"><div className="confirm-modal" role="dialog" aria-modal="true"><span className="signal-kicker">EXECUTION MODE</span><h2>{mode==='automatic'?'切换到「待我开始」？':'切换到「全自动」？'}</h2><p>{mode==='automatic'?'新收录的 Bug 将等待你点击一次开始；已经授权的任务继续执行。':'已收录且仍 eligible 的待开始任务会进入队列，所有确定性门禁仍然生效。'}</p><div className="modal-actions"><button className="ghost" onClick={()=>setConfirmMode(false)}>取消</button><button className="primary compact" onClick={toggleMode}>确认切换</button></div></div></div>}
+    {toast&&<button className="toast" onClick={()=>setToast('')}>{toast}</button>}
   </div>
 }
-
-export default App
