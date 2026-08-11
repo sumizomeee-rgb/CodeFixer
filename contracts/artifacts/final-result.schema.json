@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["schema_version", "task_id", "task_run_id", "status", "result", "change_version", "summary", "failure", "artifacts", "side_effects"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task_id": {"type": "string"},
+    "task_run_id": {"type": "string"},
+    "status": {"enum": ["completed", "failed", "canceled", "superseded"]},
+    "result": {"enum": ["changed", "no_change", null]},
+    "change_version": {"type": ["integer", "null"]},
+    "summary": {"type": "string"},
+    "failure": {"type": ["object", "null"]},
+    "artifacts": {"type": "array"},
+    "side_effects": {"type": "array"}
+  },
+  "additionalProperties": true
+}

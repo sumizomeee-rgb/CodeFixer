@@ -1,0 +1,19 @@
+{
+  "schemaVersion": 1,
+  "server": {"host": "0.0.0.0", "port": 9522},
+  "storage": {"dataRoot": "../../data"},
+  "execution": {"mode": "awaitingStart", "maxConcurrentTasks": 3, "maxRepairAttempts": 3},
+  "ticketProviders": [],
+  "agentProfiles": [],
+  "knowledgeProviders": [],
+  "connections": [],
+  "executableBindings": {
+    "git-cli": {"command": ["git"], "versionArgs": ["--version"], "versionConstraint": null},
+    "svn-cli": {"command": ["svn"], "versionArgs": ["--version", "--quiet"], "versionConstraint": null},
+    "claude-code-cli": {"command": ["claude"], "versionArgs": ["--version"], "versionConstraint": null},
+    "codex-cli": {"command": ["codex"], "versionArgs": ["--version"], "versionConstraint": null},
+    "opencode-cli": {"command": ["opencode"], "versionArgs": ["--version"], "versionConstraint": null}
+  },
+  "pathBindings": {"primary-patches": "patches", "git-materialization": "repositories/git-materialization"},
+  "projects": []
+}

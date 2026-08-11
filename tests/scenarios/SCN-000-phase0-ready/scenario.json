@@ -1,0 +1,9 @@
+{
+  "id": "SCN-000",
+  "name": "phase0_foundation_ready",
+  "expected": {
+    "health": "ok",
+    "readiness": true,
+    "frontendMarker": "维修控制台"
+  }
+}

@@ -1,0 +1,16 @@
+[Unit]
+Description=CodeFixer Repair Control Tower
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/codefixer/backend
+Environment=CODEFIXER_ENV=production
+ExecStart=%h/codefixer/backend/.venv/bin/python -m uvicorn codefixer.main:app --host 0.0.0.0 --port 9522
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=45
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://codefixer.local/contracts/config/server-config.schema.json",
+  "type": "object",
+  "required": ["schemaVersion", "server", "storage", "execution"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "server": {
+      "type": "object",
+      "required": ["host", "port"],
+      "properties": {"host": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}},
+      "additionalProperties": false
+    },
+    "storage": {
+      "type": "object",
+      "required": ["dataRoot"],
+      "properties": {"dataRoot": {"type": "string", "minLength": 1}},
+      "additionalProperties": false
+    },
+    "execution": {
+      "type": "object",
+      "required": ["mode", "maxConcurrentTasks", "maxRepairAttempts"],
+      "properties": {
+        "mode": {"enum": ["automatic", "awaitingStart"]},
+        "maxConcurrentTasks": {"type": "integer", "minimum": 1},
+        "maxRepairAttempts": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "ticketProviders": {"type": "array"},
+    "agentProfiles": {"type": "array"},
+    "knowledgeProviders": {"type": "array"},
+    "connections": {"type": "array"},
+    "executableBindings": {"type": "object"},
+    "pathBindings": {"type": "object", "additionalProperties": {"type": "string"}},
+    "projects": {"type": "array"}
+  },
+  "additionalProperties": false
+}

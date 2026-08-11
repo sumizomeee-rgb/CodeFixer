@@ -1,29 +1,27 @@
 # Python
 __pycache__/
 *.py[cod]
-.pytest_cache/
-.ruff_cache/
 .venv/
+.pytest_cache/
+.coverage
+htmlcov/
 
 # Node
 node_modules/
-dist/
+frontend/dist/
+frontend/test-results/
+frontend/playwright-report/
 
-# 本机配置与凭据
-.env
-.env.*
-!.env.example
-*.local.json
-secrets/
+# Runtime
+/data/
+config/local.*
+config/secrets.*
+*.db
+*.db-shm
+*.db-wal
 
-# CodeFixer 运行数据
-data/
-logs/
-workspaces/
-patches/
-
-# 编辑器与系统文件
-.idea/
+# Editors / OS
 .vscode/
+.idea/
 .DS_Store
 Thumbs.db
