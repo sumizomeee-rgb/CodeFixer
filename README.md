@@ -39,20 +39,37 @@ CodeFixer 的第一版施工以以下规范共同作为基准：
 
 ## 当前阶段
 
-产品语义与核心技术边界已经冻结到可施工水平；仓库现在进入 **Phase 0：Engineering Foundation**。
+**Phase 0：Engineering Foundation 已完成，仓库达到 `ready_for_implementation`。**
 
-Phase 0 的目标不是实现业务功能，而是先建立：
+已经建立并通过 Linux CI 验证：
 
-- 规范源码目录和依赖边界。
+- 规范源码目录与依赖边界。
 - Contracts/Schema 单一事实源。
-- FastAPI/SQLite/React 最小纵切。
-- CodeFixer Design System 与关键视觉组件。
-- pytest/Vitest/Playwright 测试底座。
-- Scenario Regression 与故障注入框架。
-- CI、构建、health/readiness 和 Linux 部署骨架。
+- FastAPI + SQLite WAL + migration 最小纵切。
+- `/api/health`、`/api/readiness` 与 React SPA 同源托管。
+- React/Vite production build。
+- CodeFixer Repair Signal Design System 第一版。
+- StageRail、TaskCard、Failure/NoChange 等关键视觉语义。
+- pytest、Vitest Browser Mode、Playwright E2E 与 visual regression。
+- Phase 0 Scenario fixture。
+- GitHub Actions Direct-Main gate。
+- Linux systemd 服务骨架与稳定脚本入口。
+- npm lockfile 与 Linux/Chromium visual golden baseline。
 
-达到 [工程就绪规范](docs/engineering-readiness-spec.md) 的 `ready_for_implementation` 条件后，再按产品 SPEC 的阶段顺序端到端施工。
+详细证据见 [Phase 0 自测报告](docs/testing/reports/phase0-self-test.md)。
+
+下一步按主 SPEC 进入正式功能阶段，从配置、Provider、Task 持久化与调度开始，持续遵守 Direct-Main、Scenario Regression 和视觉门禁。
+
+## 稳定命令
+
+```bash
+./scripts/bootstrap.sh
+./scripts/test-fast.sh
+./scripts/test-all.sh
+./scripts/build.sh
+./scripts/readiness.sh
+```
 
 ## 仓库状态
 
-当前仓库仍处于设计与工程基础准备阶段，尚未开始第一版功能实现。
+工程基础已就绪，第一版功能施工正式开始。

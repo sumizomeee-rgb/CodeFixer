@@ -2,29 +2,34 @@
 
 > 日期：2026-08-12
 > 施工模式：Direct-Main
-> 阶段：Engineering Foundation 初始纵切
+> 阶段：Engineering Foundation
+> 结论：`ready_for_implementation`
 
-## 本轮完成
+## 完成范围
 
 - 后端 FastAPI 最小纵切。
 - 默认配置与 JSON Schema。
 - SQLite WAL 与 migration harness。
 - `/api/health` 与 `/api/readiness`。
-- SPA 同源托管。
-- React/Vite/Vitest/Playwright 工程配置。
+- React SPA 同源托管。
+- React/Vite/Vitest/Playwright 工程。
 - Repair Signal 控制台 UI 第一版。
 - StageRail、TaskCard、Failure/NoChange 展示语义。
-- 明/暗主题与 1024 紧凑桌面布局。
+- 明/暗主题与紧凑桌面布局。
 - Phase 0 Scenario fixture。
-- GitHub Actions main gate。
+- GitHub Actions Direct-Main gate。
 - systemd 服务骨架与稳定脚本入口。
+- npm lockfile。
+- Linux/Chromium visual golden baseline。
 
-## 实际执行的后端测试
+## 本地后端测试
 
 ```text
 PYTHONPATH=backend/src python -m pytest backend/tests tests/scenarios/test_phase0_scenario.py -q
 .... [100%]
 ```
+
+结果：4 passed。
 
 覆盖：
 
@@ -34,11 +39,11 @@ PYTHONPATH=backend/src python -m pytest backend/tests tests/scenarios/test_phase
 - `/api/health`。
 - `/api/readiness`。
 - SPA index fallback。
-- SCN-000 phase0_foundation_ready。
+- `SCN-000 phase0_foundation_ready`。
 
-结果：4 passed。
+## 本地 Readiness
 
-## 实际运行 Readiness
+实际运行结果：
 
 ```json
 {
@@ -53,40 +58,78 @@ PYTHONPATH=backend/src python -m pytest backend/tests tests/scenarios/test_phase
 }
 ```
 
-本地截图验证使用 `frontend/preview-dist` 作为受限环境的静态构建替身，因此此处 `frontend.dist=ready` 只证明 FastAPI 的同源托管与页面产物可读，不等于 npm production build 已在该容器执行。
+## 本地 Chromium 视觉检查
 
-## Chromium 交互/视觉验证
+受执行容器网络策略限制，本地 Chromium 不能导航到 localhost/file URL，因此用 Python Playwright `page.set_content()` 将与预览产物相同的 HTML/CSS 注入真实 Chromium 渲染引擎，执行 DOM、主题切换和布局断言。
 
-受执行环境策略限制，Chromium 禁止导航到 localhost/file URL；因此使用 Python Playwright `page.set_content()` 加载与 `preview-dist` 完全相同的 HTML/CSS 内容，在真实 Chromium 渲染引擎中执行 DOM/交互断言与截图。
+通过：
 
-通过断言：
-
-- `维修控制台` 标题可见。
+- `维修控制台` 可见。
 - `系统就绪` 可见。
 - `PARTIAL DELIVERY` 可见。
-- 主题按钮切换后 `html[data-theme=dark]` 成立。
-- 1024×768 下主标题仍可见且布局无横向溢出。
+- 主题按钮可切换 `html[data-theme=dark]`。
+- 1024×768 紧凑桌面无横向溢出。
 
-生成截图：
+生成：
 
-- `dashboard-light.png`：1440×900 明色。
-- `dashboard-dark.png`：1440×900 暗色。
-- `dashboard-compact.png`：1024×768 暗色紧凑桌面。
+- `dashboard-light.png`：1440 宽明色。
+- `dashboard-dark.png`：1440 宽暗色。
+- `dashboard-compact.png`：1024 宽暗色紧凑布局。
 
-## 环境限制 / 未冒充通过的项目
+## GitHub Actions Linux 复验
 
-当前执行容器无外网 npm 安装能力，且没有 React/Vite/Vitest Node 依赖缓存，因此以下项目本轮**没有在本机执行**：
+Main gate run `31517713323` 在 Ubuntu Runner 上完成完整 Phase 0 复验，两项 job 均成功。
 
-- `npm ci`
-- `npm run typecheck`
-- `npm run build`
-- Vitest Browser Mode
-- Node `@playwright/test` E2E/visual suite
+Backend：
 
-仓库已经提供对应 package/config/tests 和 GitHub Actions main gate；push 后 CI 应作为第二环境执行这些步骤。只有 CI 中这些步骤实际全绿，才把 npm 侧 Phase 0 条件标为通过。
+- Python 环境安装成功。
+- backend unit/contract/integration + Phase 0 Scenario 成功。
+
+Frontend：
+
+- npm dependency install 成功。
+- TypeScript typecheck 成功。
+- Vite production build 成功。
+- Playwright Chromium 安装成功。
+- Vitest Browser Mode 成功。
+- 使用真实 `frontend/dist` 启动 FastAPI 同源服务成功。
+- `/api/readiness` 在 production build 下通过。
+- Playwright E2E 成功。
+- Playwright visual snapshot 成功。
+
+Bootstrap 完成后 CI 生成并提交：
+
+- `frontend/package-lock.json`。
+- `frontend/e2e/phase0.spec.ts-snapshots/dashboard-light-chromium-linux.png`。
+
+## 回归中实际发现并修复的问题
+
+1. TypeScript 7 无 Vite client 类型时无法接受 CSS side-effect import。补充 `src/vite-env.d.ts` 后 production build 通过。
+2. `@vitest/browser-playwright` 与 `@playwright/test` 初始解析到不同 Playwright browser revision。统一 Playwright 版本后 Browser Mode 通过。
+3. Vitest 与 Playwright E2E 的文件匹配范围显式隔离，避免 `e2e/*.spec.ts` 被组件测试误收集。
+4. 初始仓库没有 lockfile；CI bootstrap 首次生成，随后 Direct-Main 使用 `npm ci` 进行确定性安装。
+
+这些问题均由真实 CI 暴露，不通过跳过测试或放宽门禁规避。
+
+## Phase 0 开工条件核对
+
+- [x] architecture repository structure 生效。
+- [x] design system 生效。
+- [x] testing strategy 生效。
+- [x] backend/frontend/contracts/tests/deploy/scripts 建立。
+- [x] Backend health/readiness。
+- [x] Frontend production build + Backend 同源托管。
+- [x] SQLite migration harness + WAL。
+- [x] pytest。
+- [x] Vitest Browser Mode。
+- [x] Playwright E2E。
+- [x] Scenario fixture。
+- [x] visual golden baseline。
+- [x] 稳定 bootstrap/test/build/readiness 脚本。
+- [x] Linux CI 不依赖本机绝对路径与 Secret。
 
 ## 结论
 
-Backend、database、schema、runtime readiness、浏览器渲染与交互的本轮可执行检查通过。
+Phase 0 的工程基础、测试底座、CI、视觉基线和最小运行纵切已经通过本地与 Linux Runner 双重验证。
 
-Phase 0 已建立可施工骨架，但完整 `ready_for_implementation` 仍需 GitHub Actions 在可联网 Linux Runner 上完成 npm install/build/Vitest/Playwright 复验并保持 main 绿色。
+仓库达到 `ready_for_implementation`，可以进入第一版正式功能施工。后续任何阶段仍必须遵守 Direct-Main pre-commit gate、Main 全量复验、Scenario Regression 与 visual regression，不因 Phase 0 通过而降低门禁。
