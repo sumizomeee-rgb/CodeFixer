@@ -35,9 +35,9 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     repository_path = resolve_path_binding(loaded, repository_ref) if repository_ref else None
     repo_ok = repository_path is not None and repository_path.exists()
     checks.append(_check("source.repository", repo_ok, f"仓库路径：{repository_path}" if repository_path else "修改源 repositoryRef 无法解析", "在 pathBindings 中配置当前机器的仓库/工作副本路径" if not repo_ok else None))
-    if repo_ok and source_type == "git":
+    if repository_path is not None and repository_path.exists() and source_type == "git":
         checks.append(_check("source.git_layout", (repository_path / ".git").exists(), "Git 工作区可识别", "repositoryRef 必须指向 Git working tree"))
-    if repo_ok and source_type == "svn":
+    if repository_path is not None and repository_path.exists() and source_type == "svn":
         checks.append(_check("source.svn_layout", (repository_path / ".svn").exists(), "SVN 工作副本可识别", "repositoryRef 必须指向 SVN working copy"))
     executable_ref = str(source.get("executableRef", ""))
     binding = loaded.config.executableBindings.get(executable_ref, {}) if executable_ref else {}
@@ -71,7 +71,7 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
             output_ref = str(action.get("outputDirectoryRef", ""))
             output = resolve_path_binding(loaded, output_ref) if output_ref else None
             output_ok = output is not None
-            if output_ok:
+            if output is not None:
                 try:
                     output.mkdir(parents=True, exist_ok=True)
                     probe = output / ".codefixer-preflight"
