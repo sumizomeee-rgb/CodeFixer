@@ -51,6 +51,8 @@ class LoadedConfig(BaseModel):
     base_config_path: Path
     data_root: Path
     frontend_dist: Path
+    local_config_path: Path | None = None
+    secrets_config_path: Path | None = None
 
 
 def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
@@ -82,8 +84,11 @@ def load_config(base_config_path: Path | None = None) -> LoadedConfig:
     merged = _read_json(default_path)
 
     local_path_raw = os.environ.get("CODEFIXER_LOCAL_CONFIG")
-    if local_path_raw:
-        merged = _deep_merge(merged, _read_json(Path(local_path_raw).resolve()))
+    local_path = Path(local_path_raw).resolve() if local_path_raw else (repo_root / "config/local.json").resolve()
+    if local_path.exists():
+        merged = _deep_merge(merged, _read_json(local_path))
+    secret_path_raw = os.environ.get("CODEFIXER_SECRET_CONFIG")
+    secret_path = Path(secret_path_raw).resolve() if secret_path_raw else (repo_root / "config/secrets.json").resolve()
 
     config = AppConfig.model_validate(merged)
     raw_data_root = Path(config.storage.dataRoot)
@@ -105,4 +110,6 @@ def load_config(base_config_path: Path | None = None) -> LoadedConfig:
         base_config_path=default_path,
         data_root=data_root,
         frontend_dist=frontend_dist,
+        local_config_path=local_path,
+        secrets_config_path=secret_path,
     )

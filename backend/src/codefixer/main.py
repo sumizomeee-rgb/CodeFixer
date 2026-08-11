@@ -6,8 +6,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from codefixer.api.errors import install_error_handlers
+from codefixer.api.projects import router as projects_router
+from codefixer.api.secrets import router as secrets_router
+from codefixer.api.settings import router as settings_router
 from codefixer.api.system import router as system_router
 from codefixer.config import LoadedConfig, load_config
+from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.database import initialize_database
 
 
@@ -21,8 +26,13 @@ def create_app(loaded_config: LoadedConfig | None = None) -> FastAPI:
         yield
 
     app = FastAPI(title="CodeFixer API", version="0.1.0", lifespan=lifespan)
+    install_error_handlers(app)
     app.state.loaded_config = loaded
+    app.state.config_store = ConfigStore(loaded)
     app.include_router(system_router)
+    app.include_router(settings_router)
+    app.include_router(projects_router)
+    app.include_router(secrets_router)
 
     assets = loaded.frontend_dist / "assets"
     if assets.is_dir():
