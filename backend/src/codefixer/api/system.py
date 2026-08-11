@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -35,7 +36,7 @@ def readiness(request: Request) -> dict[str, object]:
     db = inspect_database(db_path)
     frontend_ready = (loaded.frontend_dist / "index.html").is_file()
 
-    checks = [
+    checks: list[dict[str, Any]] = [
         {
             "id": "config.loaded",
             "status": "ready",
