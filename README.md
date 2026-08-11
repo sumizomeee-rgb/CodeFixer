@@ -10,6 +10,10 @@ Web 管理界面与 API 同源，第一版正式服务端口统一为 `9522`。
 
 - [产品与技术设计 SPEC](docs/design-spec.md)
 
+仅在对应路径存在的本机 Windows 开发环境中，Agent 还可以读取：
+
+- [本机开发 Agent 参考路径](docs/local-development-references.md)
+
 ## 已确定的第一版边界
 
 - 工单来源：Redmine、TAPD。
