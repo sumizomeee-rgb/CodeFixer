@@ -1,6 +1,6 @@
 # CodeFixer 工程就绪规范
 
-> 文档状态：V2.1 规范性补充
+> 文档状态：V2.2 规范性补充
 > 最后更新：2026-08-12
 > 适用范围：CodeFixer 第一版正式施工前的工程基线
 > 上位文档：`docs/design-spec.md`
@@ -106,6 +106,22 @@ UI 不得创造后端不存在的伪状态，不得通过视觉“猜测”任�
 
 领域逻辑不得通过全局单例、隐式当前目录或真实网络才能测试。
 
+### 3.6 Direct-Main 施工策略
+
+CodeFixer 第一版采用直接在 `main` 施工的单主线模式，不要求为日常开发创建 feature branch，也不要求通过 Pull Request 才能合入。
+
+取消分支/PR 不等于取消工程门禁。必须遵守：
+
+1. **提交前门禁**：任何写入 `main` 的施工提交，在推送前必须运行与改动匹配的本地快速门禁；已知失败的代码禁止主动推入 `main`。
+2. **原子提交**：一个 commit 应对应一个可解释纵切、修复或规范变更，代码、测试、必要的 Schema/文档同步进入同一提交或紧邻的可恢复提交序列。
+3. **小步前进**：避免长时间积累大批未验证改动后一次性推送；每个纵切完成即自测、提交、复验。
+4. **Push 后复验**：每次 push 到 `main` 自动触发 GitHub Actions。CI 是第二道确定性复验，不替代提交前自测。
+5. **Main 红灯优先级最高**：若 `main` 的 blocking CI 失败，仓库进入 `main_red` 事实状态；在恢复绿色前不得继续叠加无关 Feature，下一提交应优先修复失败或明确回退。
+6. **可追溯自测**：阶段性提交和 Phase 结束必须产出自测记录；不能用“没有 PR 所以没有评审记录”作为省略测试证据的理由。
+7. **危险变化额外门禁**：状态机、Artifact、数据库 migration、Scheduler、Delivery、权限边界和 Design System 的结构性修改，在提交前必须运行对应完整回归集合，而不仅是快速测试。
+
+如果未来改为多人高并发协作，可以另行引入 branch/PR 保护流程；这不是 V1 施工前提，也不得改变产品语义和测试门禁。
+
 ## 4. Phase 0：Engineering Foundation
 
 Phase 0 是正式阶段一之前的强制阶段。
@@ -200,7 +216,7 @@ build
 
 允许基于耗时合并 job，但逻辑门禁不能消失。
 
-PR 必须通过快速门禁；真实外部服务测试不进入普通 PR blocking job。
+CI 至少支持 `push` 到 `main`、手工触发和 nightly。日常施工不依赖 PR；真实外部服务测试不进入每次 main push 的默认 blocking job。
 
 ## 5. 实施阶段覆盖
 
@@ -291,9 +307,9 @@ PR 必须通过快速门禁；真实外部服务测试不进入普通 PR blockin
 
 ## 7. Regression Gate
 
-### 7.1 PR Blocking
+### 7.1 Direct-Main Pre-Commit Blocking
 
-普通 PR 至少阻断于：
+每次准备向 `main` 写入施工提交前，至少阻断于：
 
 - formatting/lint。
 - typecheck。
@@ -302,22 +318,38 @@ PR 必须通过快速门禁；真实外部服务测试不进入普通 PR blockin
 - 受影响 Scenario。
 - build。
 
-影响状态机、Artifact、Scheduler、Delivery、Design System 时必须额外运行对应完整回归集合。
+影响状态机、Artifact、Scheduler、Delivery、Design System 或 migration 时必须额外运行对应完整回归集合。
 
-### 7.2 Main/Nightly
+如果本次改动只涉及文档且不改变协议、配置、生成物或可执行行为，可以跳过无关运行时测试，但必须确认文档引用和规范一致性。
 
-Main 或 nightly 运行：
+### 7.2 Push-to-Main CI
 
-- 全 Scenario Regression Suite。
-- Linux E2E。
+每次 push 到 `main` 至少运行：
+
+- formatting/lint。
+- typecheck。
+- backend unit + contract + integration。
+- frontend unit/browser。
+- Scenario Regression Suite。
+- E2E。
 - visual regression。
+- build。
+
+允许按路径和成本把部分重型任务拆为异步 blocking workflow，但在 blocking 结果明确前不得把对应提交标记为阶段完成。
+
+### 7.3 Nightly
+
+Nightly 在 main 全量基础上增加：
+
 - browser matrix 的精选关键路径。
-- Git/SVN workspace isolation。
-- crash/restart/reconciliation。
+- Git/SVN workspace isolation 扩展矩阵。
+- repeated crash/restart/reconciliation。
 - performance smoke。
 - accessibility smoke。
+- resource leak/stress concurrency。
+- 可用凭据环境中的受控外部服务 smoke。
 
-### 7.3 Release Candidate
+### 7.4 Release Candidate
 
 发布候选必须：
 
