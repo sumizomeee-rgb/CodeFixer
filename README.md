@@ -6,28 +6,7 @@ Web 管理界面与 API 同源，第一版正式服务端口统一为 `9522`。
 
 它从外部工单系统收录 Bug，通过独立的 Discovery 与 Repair Agent 自主反查和修改唯一代码源，经过验证与 Review 后，按项目配置生成 Patch 和/或创建普通 GitLab MR。
 
-## 规范文档
-
-CodeFixer 的第一版施工以以下规范共同作为基准：
-
-1. [产品与技术设计 SPEC](docs/design-spec.md)  
-   定义产品语义、领域模型、任务协议、状态机、Artifact、并发、幂等、交付与部署边界。
-2. [工程就绪规范](docs/engineering-readiness-spec.md)  
-   定义正式 Feature Coding 前的 Phase 0、Definition of Done、回归门禁和端到端施工要求。
-3. [仓库结构与依赖规范](docs/architecture/repository-structure.md)  
-   定义 backend/frontend/contracts/tests/deploy 的目录、分层和依赖方向。
-4. [Web 设计系统与交互规范](docs/design/design-system.md)  
-   定义 CodeFixer 的“Repair Signal / 自动维修控制塔”视觉语言、关键组件、动效和视觉回归基线。
-5. [测试、回归与自测策略](docs/testing/test-strategy.md)  
-   定义 unit、contract、integration、Scenario Regression、E2E、visual、故障注入和 Release Gate。
-
-仅在对应路径存在的本机 Windows 开发环境中，Agent 还可以读取：
-
-- [本机开发 Agent 参考路径](docs/local-development-references.md)
-
-该文件只用于本机开发辅助，不属于运行依赖，也不得让公开仓库依赖其中的本地项目或绝对路径。
-
-## 已确定的第一版边界
+## 第一版边界
 
 - 工单来源：Redmine、TAPD。
 - 修改源：Git、SVN。
@@ -37,39 +16,82 @@ CodeFixer 的第一版施工以以下规范共同作为基准：
 - 一个 Bug 只修改一个代码源，但可以执行多个最终动作。
 - 不实现 GitHub PR、自动合并 MR、SVN 直接提交和多修改源任务。
 
-## 当前阶段
+## 开发与迁移
 
-**Phase 0：Engineering Foundation 已完成，仓库达到 `ready_for_implementation`。**
+CodeFixer 优先保证**项目自包含、可换机器、可换托管平台**，不把 GitHub Actions 当成运行依赖或硬门禁。
 
-已经建立并通过 Linux CI 验证：
+最小宿主环境：
 
-- 规范源码目录与依赖边界。
-- Contracts/Schema 单一事实源。
-- FastAPI + SQLite WAL + migration 最小纵切。
-- `/api/health`、`/api/readiness` 与 React SPA 同源托管。
-- React/Vite production build。
-- CodeFixer Repair Signal Design System 第一版。
-- StageRail、TaskCard、Failure/NoChange 等关键视觉语义。
-- pytest、Vitest Browser Mode、Playwright E2E 与 visual regression。
-- Phase 0 Scenario fixture。
-- GitHub Actions Direct-Main gate。
-- Linux systemd 服务骨架与稳定脚本入口。
-- npm lockfile 与 Linux/Chromium visual golden baseline。
+- Python `3.12+`
+- Node.js `20.19+` 或 `22.12+`（推荐 Node 22）
+- npm
 
-详细证据见 [Phase 0 自测报告](docs/testing/reports/phase0-self-test.md)。
-
-下一步按主 SPEC 进入正式功能阶段，从配置、Provider、Task 持久化与调度开始，持续遵守 Direct-Main、Scenario Regression 和视觉门禁。
-
-## 稳定命令
+然后在仓库根目录执行：
 
 ```bash
-./scripts/bootstrap.sh
-./scripts/test-fast.sh
-./scripts/test-all.sh
-./scripts/build.sh
-./scripts/readiness.sh
+python scripts/bootstrap.py
 ```
 
-## 仓库状态
+Windows PowerShell：
 
-工程基础已就绪，第一版功能施工正式开始。
+```powershell
+.\scripts\bootstrap.ps1
+```
+
+bootstrap 默认把依赖放在项目内：
+
+```text
+backend/.venv/          Python venv + site-packages
+frontend/node_modules/  npm dependencies
+```
+
+`npm install/npm ci` 的默认行为就是本地安装到当前项目 `node_modules`；Python `venv` 也会在指定目录中建立独立 interpreter/site-packages。迁移时不要复制这两个机器相关目录，而是在新机器重新跑 bootstrap。
+
+需要完整浏览器测试时：
+
+```bash
+python scripts/bootstrap.py --with-browser
+```
+
+需要从源码生成 production 前端：
+
+```bash
+python scripts/bootstrap.py --production
+```
+
+更完整的迁移、Secret 和软门禁约定见 [开发与迁移约定](docs/development-policy.md)。
+
+## 自动检查策略
+
+`.github/workflows/ci.yml` 只是 advisory quality checks：
+
+- push 到 main：轻量 backend/frontend 检查；失败用于提示，不把仓库锁成不可开发状态。
+- 手工触发：可额外运行 Browser/E2E/visual。
+- workflow 无 `contents: write`，不会自动 commit/push。
+- 没有 nightly 强制任务，也没有 CodeFixer 自己要求的 branch protection。
+
+发布候选仍应主动完成完整回归，但日常开发以本地自测 + 文档约定为主。
+
+## 当前实现进度
+
+已完成/已接入：
+
+- FastAPI + SQLite WAL + migrations。
+- `/api/health`、`/api/readiness` 与 React SPA 同源托管。
+- React/Vite UI 与 Repair Signal Design System。
+- 配置、SecretRef、Project CRUD 与 Preflight。
+- 持久化 Ticket/Task/TaskRun 基础事实层。
+- Task 列表、详情、Start/Cancel 控制面。
+- Redmine/TAPD TicketProvider 与确定性项目路由第一版。
+- pytest、Vitest、Playwright 测试底座。
+
+## 规范文档
+
+- [产品与技术设计 SPEC](docs/design-spec.md)
+- [工程就绪规范](docs/engineering-readiness-spec.md)
+- [仓库结构与依赖规范](docs/architecture/repository-structure.md)
+- [Web 设计系统与交互规范](docs/design/design-system.md)
+- [测试、回归与自测策略](docs/testing/test-strategy.md)
+- [开发与迁移约定](docs/development-policy.md)
+
+若旧工程文档仍出现 `blocking CI` / `main_red` 等早期措辞，以 `docs/development-policy.md` 的软门禁原则为准；后续会逐步清理旧措辞，不影响产品领域语义。

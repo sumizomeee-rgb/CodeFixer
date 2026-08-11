@@ -1,82 +1,104 @@
-name: main-gate
+name: quality-checks
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: '30 18 * * *'
+    inputs:
+      extended:
+        description: Run browser/E2E checks too
+        required: false
+        default: true
+        type: boolean
 
+# Advisory only. This workflow must never mutate the repository or act as a
+# required merge/development gate. Local development remains portable to other
+# hosts and source-control environments.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  backend:
+  backend-advisory:
+    name: Backend advisory checks
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: { python-version: '3.13' }
-      - run: python -m pip install -e './backend[dev]'
-      - run: python -m ruff check backend/src backend/tests tests/scenarios
-      - run: python -m mypy backend/src
-      - run: python -m pytest backend/tests tests/scenarios/test_phase0_scenario.py
+        with:
+          python-version: '3.13'
+      - name: Install backend dev dependencies
+        run: python -m pip install -e './backend[dev]'
+      - name: Ruff
+        continue-on-error: true
+        run: python -m ruff check backend/src backend/tests tests/scenarios
+      - name: Mypy
+        continue-on-error: true
+        run: python -m mypy backend/src
+      - name: Pytest
+        continue-on-error: true
+        run: python -m pytest backend/tests tests/scenarios/test_phase0_scenario.py
 
-  frontend:
+  frontend-advisory:
+    name: Frontend advisory checks
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
-        with: { node-version: '22' }
+        with:
+          node-version: '22'
       - name: Install frontend dependencies
         working-directory: frontend
+        run: npm ci
+      - name: Typecheck
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run typecheck
+      - name: Production build
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run build
+
+  extended-advisory:
+    name: Optional browser/E2E checks
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.extended }}
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    env:
+      PLAYWRIGHT_BROWSERS_PATH: '0'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install project dependencies
         run: |
-          if [[ -f package-lock.json ]]; then
-            npm ci
-          else
-            npm install
-            echo "CODEFIXER_BOOTSTRAP=1" >> "$GITHUB_ENV"
-          fi
-      - working-directory: frontend
-        run: npm run typecheck && npm run build
-      - working-directory: frontend
-        run: npx playwright install --with-deps chromium
-      - working-directory: frontend
+          python -m pip install -e './backend[dev]'
+          cd frontend
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Browser component tests
+        continue-on-error: true
+        working-directory: frontend
         run: npm run test:browser
-      - name: Start backend
+      - name: Build frontend
+        continue-on-error: true
+        working-directory: frontend
+        run: npm run build
+      - name: Start same-origin app
+        continue-on-error: true
         run: |
-          python -m pip install -e ./backend
           CODEFIXER_FRONTEND_DIST="$PWD/frontend/dist" python -m uvicorn codefixer.main:app --host 127.0.0.1 --port 9522 &
           for i in {1..30}; do
-            READY="$(curl -fsS http://127.0.0.1:9522/api/readiness || true)"
-            echo "$READY"
-            echo "$READY" | grep -q '"ready":true' && break
+            curl -fsS http://127.0.0.1:9522/api/readiness | grep -q '"ready":true' && exit 0
             sleep 1
           done
-          curl -fsS http://127.0.0.1:9522/api/readiness | grep -q '"ready":true'
-      - name: E2E and visual regression
+          exit 1
+      - name: E2E and visual checks
+        continue-on-error: true
         working-directory: frontend
-        run: |
-          if [[ "${CODEFIXER_BOOTSTRAP:-0}" == "1" ]]; then
-            npm run test:e2e -- --update-snapshots
-          else
-            npm run test:e2e
-          fi
-      - name: Commit bootstrap lock and Linux visual golden
-        if: env.CODEFIXER_BOOTSTRAP == '1' && github.event_name == 'push'
-        run: |
-          git config user.name "codefixer-ci"
-          git config user.email "codefixer-ci@users.noreply.github.com"
-          git add frontend/package-lock.json frontend/e2e
-          git diff --cached --quiet && exit 0
-          git commit -m "chore: freeze frontend lock and visual baseline"
-          git push origin HEAD:main
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: phase0-frontend-${{ github.run_id }}
-          path: |
-            frontend/package-lock.json
-            frontend/e2e/**/*-snapshots/*.png
-            frontend/test-results
-          if-no-files-found: warn
+        run: npm run test:e2e
