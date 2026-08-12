@@ -43,7 +43,7 @@ class ReviewSequence:
     def __init__(self,verdicts:list[str]):self.verdicts=verdicts;self.calls=0
     def run(self,request):
         patch=entry_path(request.entry_file,"Candidate diff");digest=hashlib.sha256(patch.read_bytes()).hexdigest();verdict=self.verdicts[min(self.calls,len(self.verdicts)-1)];self.calls+=1
-        return AgentRunResult(status="succeeded",exit_code=0,session_id=f"review-{self.calls}",structured_output={"schema_version":1,"mode":"change","input_sha256":digest,"verdict":verdict,"summary":"Needs one more repair." if verdict=="needs_repair" else "Approved.","issues":[] if verdict=="approved" else [{"severity":"blocking","summary":"Use the final value."}]})
+        return AgentRunResult(status="succeeded",exit_code=0,session_id=f"review-{self.calls}",structured_output={"schema_version":1,"mode":"change","input_sha256":digest,"verdict":verdict,"summary":"Needs one more repair." if verdict=="needs_repair" else "Approved.","issues":[] if verdict=="approved" else [{"severity":"blocking","summary":"Use the final value.","evidence_ids":[]}]})
 class NeverReview:
     runtime_name="fake"
     def run(self,request):raise AssertionError("review must not run after unauthorized modification")

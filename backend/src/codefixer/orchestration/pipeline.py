@@ -75,6 +75,10 @@ class ChangedPipeline:
             if discovery_payload['source']['revision'] != discovery_manifest.base_revision:
                 raise PipelineFailure('source_mismatch', 'discovery', 'Discovery reported a different frozen revision')
             decision = discovery_payload['decision']
+            if decision == 'located' and (not discovery_payload['candidate_scope'] or not discovery_payload['evidence']):
+                raise PipelineFailure('agent_protocol_invalid', 'discovery', 'Located discovery requires candidate scope and evidence')
+            if decision == 'unresolved' and not isinstance(discovery_payload.get('failure'), dict):
+                raise PipelineFailure('agent_protocol_invalid', 'discovery', 'Unresolved discovery requires a structured failure')
             if decision == 'unresolved':
                 raise PipelineFailure('discovery_no_target', 'discovery', 'Discovery could not locate a repair target')
             if decision == 'no_change_claim':
@@ -207,6 +211,23 @@ class ChangedPipeline:
         entry_artifact = self.artifacts.write_text(stage_root / 'entry.md', render_stage_entry(StageEntry(task_id=task_id, run_id=run_id, stage=stage, attempt=attempt, inputs=inputs, output_path=output_path, schema_path=schema_path)))
         self._index(run_id, stage, 'entry', entry_artifact, attempt)
         result = agent.run(AgentRequest(stage='review' if stage == 'review' else 'repair' if stage == 'repair' else 'no_change_verify' if stage == 'no_change_verify' else 'discovery', entry_file=entry_artifact.path, cwd=cwd, access='workspace_write' if access == 'workspace_write' else 'read_only', output_schema=schema_path, cancel_check=lambda: self.tasks.is_cancel_requested(run_id)))
+        diagnostic = self.artifacts.write_json(
+            stage_root / 'agent-runtime.json',
+            {
+                'schema_version': 1,
+                'runtime': str(getattr(agent, 'runtime_name', 'unknown')),
+                'status': result.status,
+                'exit_code': result.exit_code,
+                'session_id': result.session_id,
+                'duration_seconds': result.duration_seconds,
+                'usage': result.usage,
+                'cost_usd': result.cost_usd,
+                'command': list(result.command),
+                'stderr': result.stderr,
+                'events': list(result.events),
+            },
+        )
+        self._index(run_id, stage, 'agent_runtime', diagnostic, attempt)
         if result.status == 'canceled':
             self.tasks.finish_stage(stage_db_id, status='canceled')
             raise PipelineCanceled()
@@ -214,8 +235,9 @@ class ChangedPipeline:
             self.tasks.finish_stage(stage_db_id, status='failed', failure={'code': 'agent_timeout'})
             raise PipelineFailure('agent_timeout', stage, f'{stage} Agent timed out')
         if result.status != 'succeeded':
-            self.tasks.finish_stage(stage_db_id, status='failed', failure={'code': 'agent_failed'})
-            raise PipelineFailure('agent_protocol_invalid', stage, f'{stage} Agent did not complete successfully')
+            reason = self._agent_failure_reason(result)
+            self.tasks.finish_stage(stage_db_id, status='failed', failure={'code': 'agent_failed', 'summary': reason, 'diagnostic_path': str(diagnostic.path)})
+            raise PipelineFailure('agent_protocol_invalid', stage, f'{stage} Agent failed: {reason}')
         if self.tasks.is_cancel_requested(run_id):
             self.tasks.finish_stage(stage_db_id, status='canceled')
             raise PipelineCanceled()
@@ -230,6 +252,21 @@ class ChangedPipeline:
         self._index(run_id, stage, schema_name, artifact, attempt)
         self.tasks.finish_stage(stage_db_id, status='completed', output_path=str(artifact.path))
         return artifact
+
+    @staticmethod
+    def _agent_failure_reason(result: Any) -> str:
+        for event in reversed(result.events):
+            if str(event.get('type', '')) not in {'error', 'turn.failed'}:
+                continue
+            error = event.get('error')
+            if isinstance(error, dict) and error.get('message'):
+                return str(error['message'])[:1200]
+            if event.get('message'):
+                return str(event['message'])[:1200]
+        stderr = result.stderr.strip()
+        if stderr:
+            return stderr.splitlines()[-1][:1200]
+        return f'process exited with code {result.exit_code}'
 
     def _run_stability_check(self, *, run_id: str, context: dict[str, Any], frozen_source_revision: str) -> None:
         if self.stability_guard is None:

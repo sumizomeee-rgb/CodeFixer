@@ -76,9 +76,6 @@ class SubprocessRunner:
             stdin=subprocess.PIPE if stdin_text is not None else None,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             env=process_env,
             **kwargs,
         )
@@ -88,23 +85,42 @@ class SubprocessRunner:
             if cancel_check is not None and cancel_check():
                 self._terminate_tree(process)
                 stdout, stderr = process.communicate()
-                return ProcessResult(process.returncode, stdout, stderr, False, time.monotonic() - started, True)
+                return ProcessResult(
+                    process.returncode,
+                    stdout.decode("utf-8", errors="replace"),
+                    stderr.decode("utf-8", errors="replace"),
+                    False,
+                    time.monotonic() - started,
+                    True,
+                )
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 self._terminate_tree(process)
                 stdout, stderr = process.communicate()
-                return ProcessResult(process.returncode, stdout, stderr, True, time.monotonic() - started)
+                return ProcessResult(
+                    process.returncode,
+                    stdout.decode("utf-8", errors="replace"),
+                    stderr.decode("utf-8", errors="replace"),
+                    True,
+                    time.monotonic() - started,
+                )
             try:
                 stdout, stderr = process.communicate(
-                    input=stdin_text if first_communicate else None,
+                    input=stdin_text.encode("utf-8") if first_communicate and stdin_text is not None else None,
                     timeout=min(0.25, remaining),
                 )
-                return ProcessResult(process.returncode, stdout, stderr, False, time.monotonic() - started)
+                return ProcessResult(
+                    process.returncode,
+                    stdout.decode("utf-8", errors="replace"),
+                    stderr.decode("utf-8", errors="replace"),
+                    False,
+                    time.monotonic() - started,
+                )
             except subprocess.TimeoutExpired:
                 first_communicate = False
 
     @staticmethod
-    def _terminate_tree(process: subprocess.Popen[str]) -> None:
+    def _terminate_tree(process: subprocess.Popen[bytes]) -> None:
         if process.poll() is not None:
             return
         if os.name == "nt":

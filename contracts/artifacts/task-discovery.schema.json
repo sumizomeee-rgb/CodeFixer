@@ -5,20 +5,25 @@
   "additionalProperties": false,
   "required": ["schema_version", "decision", "source", "summary", "candidate_scope", "evidence", "failure"],
   "properties": {
-    "schema_version": {"const": 1},
-    "decision": {"enum": ["located", "no_change_claim", "unresolved"]},
+    "schema_version": {"type": "integer", "const": 1},
+    "decision": {"type": "string", "enum": ["located", "no_change_claim", "unresolved"]},
     "source": {"$ref": "#/$defs/source"},
     "summary": {"type": "string", "minLength": 1},
-    "candidate_scope": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "candidate_scope": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "evidence": {"type": "array", "items": {"$ref": "#/$defs/evidence"}},
-    "failure": {"type": ["object", "null"]}
+    "failure": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["code", "summary", "retryable"],
+      "properties": {
+        "code": {"type": "string", "minLength": 1},
+        "summary": {"type": "string", "minLength": 1},
+        "retryable": {"type": "boolean"}
+      }
+    }
   },
-  "allOf": [
-    {"if": {"properties": {"decision": {"const": "located"}}}, "then": {"properties": {"candidate_scope": {"minItems": 1}, "evidence": {"minItems": 1}}}},
-    {"if": {"properties": {"decision": {"const": "unresolved"}}}, "then": {"properties": {"failure": {"type": "object"}}}}
-  ],
   "$defs": {
     "source": {"type": "object", "additionalProperties": false, "required": ["id", "revision"], "properties": {"id": {"type": "string", "minLength": 1}, "revision": {"type": "string", "minLength": 1}}},
-    "evidence": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "location", "revision", "locator", "summary", "content_sha256"], "properties": {"id": {"type": "string", "minLength": 1}, "kind": {"enum": ["source", "history", "ticket", "attachment", "verification"]}, "location": {"type": "string", "minLength": 1}, "revision": {"type": ["string", "null"]}, "locator": {"type": "string", "minLength": 1}, "summary": {"type": "string", "minLength": 1}, "content_sha256": {"type": ["string", "null"]}}}
+    "evidence": {"type": "object", "additionalProperties": false, "required": ["id", "kind", "location", "revision", "locator", "summary", "content_sha256"], "properties": {"id": {"type": "string", "minLength": 1}, "kind": {"type": "string", "enum": ["source", "history", "ticket", "attachment", "verification"]}, "location": {"type": "string", "minLength": 1}, "revision": {"type": ["string", "null"]}, "locator": {"type": "string", "minLength": 1}, "summary": {"type": "string", "minLength": 1}, "content_sha256": {"type": ["string", "null"]}}}
   }
 }

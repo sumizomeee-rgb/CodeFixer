@@ -54,6 +54,25 @@ def test_codex_uses_exec_json_stdin_and_native_sandbox(tmp_path: Path):
     assert isinstance(command,list);assert command[:3]==["codex","exec","--json"];assert command[command.index("--sandbox")+1]=="workspace-write";assert command[-1]=="-";assert isinstance(call["stdin"],str) and str(req.entry_file.resolve()) in call["stdin"];assert result.session_id=="t1";assert result.structured_output=={"ok":True}
 
 
+def test_codex_stage_schemas_use_supported_strict_subset():
+    artifact_root = Path(__file__).resolve().parents[3] / "contracts" / "artifacts"
+    forbidden = {"allOf", "if", "then", "else", "uniqueItems"}
+
+    def inspect(value: object) -> None:
+        if isinstance(value, dict):
+            assert not forbidden.intersection(value)
+            if "const" in value or "enum" in value:
+                assert "type" in value
+            for child in value.values():
+                inspect(child)
+        elif isinstance(value, list):
+            for child in value:
+                inspect(child)
+
+    for name in ("task-discovery", "repair-result", "review", "no-change-report"):
+        inspect(json.loads((artifact_root / f"{name}.schema.json").read_text(encoding="utf-8")))
+
+
 def test_opencode_does_not_use_dash_p_and_injects_permissions(tmp_path: Path):
     stdout="\n".join([json.dumps({"type":"session","sessionID":"o1"}),json.dumps({"type":"text","part":{"text":'{"ok":true}'},"cost":.01})]);runner=FakeRunner(ProcessResult(0,stdout,"",False,.4));runtime=build_agent_runtime({"id":"review","runtime":"opencode","executableRef":"opencode","model":"anthropic/claude-sonnet"},{"opencode":{"command":["opencode"]}},runner=runner);result=runtime.run(request(tmp_path));call=runner.calls[0];command=call["command"]
     assert isinstance(command,list);assert command[:4]==["opencode","run","--format","json"];assert "-p" not in command and "--auto" not in command;env=call["env"];assert isinstance(env,dict);inline=json.loads(env["OPENCODE_CONFIG_CONTENT"]);assert inline["permission"]["edit"]=="deny" and inline["permission"]["external_directory"]=="deny";assert result.session_id=="o1"

@@ -5,12 +5,23 @@
   "additionalProperties": false,
   "required": ["schema_version", "mode", "input_sha256", "verdict", "summary", "issues"],
   "properties": {
-    "schema_version": {"const": 1},
-    "mode": {"enum": ["change", "no_change"]},
+    "schema_version": {"type": "integer", "const": 1},
+    "mode": {"type": "string", "enum": ["change", "no_change"]},
     "input_sha256": {"type": "string", "minLength": 1},
-    "verdict": {"enum": ["approved", "needs_repair", "rejected"]},
+    "verdict": {"type": "string", "enum": ["approved", "needs_repair", "rejected"]},
     "summary": {"type": "string", "minLength": 1},
-    "issues": {"type": "array", "items": {"type": "object", "additionalProperties": true, "required": ["severity", "summary"], "properties": {"severity": {"enum": ["blocking", "warning"]}, "summary": {"type": "string", "minLength": 1}}}}
-  },
-  "allOf": [{"if": {"properties": {"mode": {"const": "no_change"}}}, "then": {"properties": {"verdict": {"enum": ["approved", "rejected"]}}}}]
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "summary", "evidence_ids"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["blocking", "warning"]},
+          "summary": {"type": "string", "minLength": 1},
+          "evidence_ids": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    }
+  }
 }
