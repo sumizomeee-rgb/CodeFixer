@@ -35,14 +35,14 @@ export default function App() {
   const [page, setPage] = useState<PageId>('dashboard')
   const [mode, setMode] = useState<ExecutionMode>('automatic')
   const [etag, setEtag] = useState('')
-  const [ready, setReady] = useState<boolean | null>(null)
+  const [readiness, setReadiness] = useState<'ready'|'warning'|'not_ready'|null>(null)
   const [confirmMode, setConfirmMode] = useState(false)
   const [toast, setToast] = useState('')
 
   useEffect(() => { document.documentElement.dataset.theme = dark ? 'dark' : 'light' }, [dark])
   useEffect(() => {
     api.settings().then(r => { setMode(r.config.execution.mode); setEtag(r.etag) }).catch(() => {})
-    api.readiness().then(r => setReady(r.ready)).catch(() => setReady(false))
+    api.readiness().then(r => setReadiness(r.status)).catch(() => setReadiness('not_ready'))
   }, [])
 
   const toggleMode = async () => {
@@ -62,7 +62,7 @@ export default function App() {
     <header className="topbar">
       <div className="brand"><RepairMark/><div><b>CodeFixer</b><small>自动修复控制台</small></div></div>
       <ModeController mode={mode} onClick={() => setConfirmMode(true)}/>
-      <div className="top-actions"><span className={`health ${ready === false ? 'health-failed' : ''}`}><i/>{ready === null ? '检查中' : ready ? '系统正常' : '需要检查'}</span><button className="icon-btn" aria-label="切换主题" onClick={() => setDark(v => !v)}><Icon name={dark ? 'sun' : 'moon'}/></button></div>
+      <div className="top-actions"><span className={`health health-${readiness??'checking'}`}><i/>{readiness===null?'检查中':readiness==='ready'?'系统正常':readiness==='warning'?'有依赖提醒':'需要检查'}</span><button className="icon-btn" aria-label="切换主题" onClick={() => setDark(v => !v)}><Icon name={dark ? 'sun' : 'moon'}/></button></div>
     </header>
     <aside className="navrail" aria-label="主导航">{nav('dashboard','首页')}{nav('tasks','任务')}{nav('projects','项目')}{nav('sources','来源')}{nav('settings','设置')}</aside>
     <main>

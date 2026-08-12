@@ -36,3 +36,5 @@ export type ProjectConfig = {
 export type SettingsResponse={config:AppConfig;secrets:Record<string,{configured:boolean}>;etag:string}
 export type PreflightCheck={id:string;status:'ready'|'warning'|'failed';summary:string;suggestion?:string}
 export type PreflightResult={projectId:string;ready:boolean;status:'ready'|'not_ready';checks:PreflightCheck[]}
+export type ReadinessCheck={id:string;status:'ready'|'warning'|'failed';summary:string;detail?:unknown;suggestion?:string;dependencyId?:string;required?:boolean;command?:string;path?:string;version?:string|null}
+export type ReadinessResponse={ready:boolean;status:'ready'|'warning'|'not_ready';checks:ReadinessCheck[];environment:string}

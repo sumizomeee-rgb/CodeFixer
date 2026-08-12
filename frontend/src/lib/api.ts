@@ -1,11 +1,11 @@
-import type { ExecutionMode, PreflightResult, ProjectConfig, SettingsResponse } from '../entities/config'
+import type { ExecutionMode, PreflightResult, ProjectConfig, ReadinessResponse, SettingsResponse } from '../entities/config'
 import type { DashboardData, TaskRecord } from '../entities/task'
 
 export class ApiError extends Error { status:number; code:string; constructor(status:number,code:string,message:string){super(message);this.status=status;this.code=code} }
 async function request<T>(path:string,init?:RequestInit):Promise<T>{const response=await fetch(path,{...init,headers:{'Content-Type':'application/json',...(init?.headers??{})}});if(!response.ok){const payload=await response.json().catch(()=>null);const error=payload?.error??payload?.detail??{};throw new ApiError(response.status,error.code??'request_failed',error.message??error.reason??`HTTP ${response.status}`)}return response.json() as Promise<T>}
 export const api={
   health:()=>request<{status:string;service:string;version:string}>('/api/health'),
-  readiness:()=>request<{ready:boolean;status:string;checks:unknown[]}>('/api/readiness'),
+  readiness:()=>request<ReadinessResponse>('/api/readiness'),
   dashboard:()=>request<DashboardData>('/api/dashboard'),
   settings:()=>request<SettingsResponse>('/api/settings'),
   putSettings:(config:SettingsResponse['config'],etag:string)=>request<SettingsResponse>('/api/settings',{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify(config)}),

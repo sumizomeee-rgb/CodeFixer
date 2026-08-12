@@ -22,10 +22,10 @@ CodeFixer 的自动检查用于发现问题和提供第二环境反馈，不作�
 
 ```text
 复制 / clone CodeFixer
-  + Python 3.12+
+  + 64 位 CPython 3.12+
   + Node.js 20.19+ 或 22.12+（推荐当前 Node 22 LTS）
   + npm
-  → python scripts/bootstrap.py
+  → scripts/bootstrap.ps1（Windows）或 scripts/bootstrap.sh（Linux）
   → 可开发
 ```
 
@@ -57,7 +57,7 @@ data/                   默认运行数据（不属于代码依赖）
 默认 bootstrap 不下载浏览器。需要本机完整浏览器测试时：
 
 ```bash
-python scripts/bootstrap.py --with-browser
+./scripts/bootstrap.sh --with-browser
 ```
 
 该模式使用 `PLAYWRIGHT_BROWSERS_PATH=0`，把 Chromium 放在 `frontend/node_modules/playwright-core/.local-browsers`，避免默认散落到用户级缓存。Linux 上 Playwright 的系统级浏览器运行库仍可能需要操作系统包；这不影响普通生产运行。
@@ -67,7 +67,7 @@ python scripts/bootstrap.py --with-browser
 开发机：
 
 ```bash
-python scripts/bootstrap.py
+./scripts/bootstrap.sh
 ```
 
 Windows PowerShell 也可以：
@@ -79,16 +79,16 @@ Windows PowerShell 也可以：
 需要浏览器测试：
 
 ```bash
-python scripts/bootstrap.py --with-browser
+./scripts/bootstrap.sh --with-browser
 ```
 
 从源码在部署机生成运行环境与前端 production build：
 
 ```bash
-python scripts/bootstrap.py --production
+./scripts/bootstrap.sh --production
 ```
 
-生产部署不要求全局 pip 安装 CodeFixer；systemd/启动脚本应使用项目内 `backend/.venv`。
+Bootstrap 入口先验证宿主解释器确实是 64 位 CPython 3.12+，再用它创建项目虚拟环境。运行、测试和 systemd 只允许使用项目内 `backend/.venv`，不得回退到 PATH 中的 `python`。生产部署不要求全局 pip 安装 CodeFixer。
 
 ## 4. Secret 与机器绑定
 

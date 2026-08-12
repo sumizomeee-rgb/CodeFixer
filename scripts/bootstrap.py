@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import platform
 import shutil
 import subprocess
 import sys
@@ -36,8 +37,8 @@ def main() -> int:
     parser.add_argument("--production", action="store_true", help="runtime Python deps + frontend production build")
     parser.add_argument("--with-browser", action="store_true", help="also install Playwright Chromium inside frontend/node_modules")
     args = parser.parse_args()
-    if sys.version_info < (3, 12):
-        raise SystemExit("CodeFixer requires Python 3.12+")
+    if platform.python_implementation() != "CPython" or sys.version_info < (3, 12) or sys.maxsize <= 2**32:
+        raise SystemExit("CodeFixer requires 64-bit CPython 3.12+")
     npm = find_npm()
     if not venv_python().exists():
         run([sys.executable, "-m", "venv", str(VENV)])

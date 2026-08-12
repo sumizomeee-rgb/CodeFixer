@@ -50,7 +50,7 @@ CodeFixer 不依赖 GitHub Actions、PR 或特定托管平台作为开发门禁�
 
 宿主机尽量只要求：
 
-- Python 3.12+
+- 64 位 CPython 3.12+
 - Node.js 22 + npm
 - 实际启用的外部 CLI：Git、SVN、Claude Code、Codex、OpenCode
 
@@ -63,41 +63,39 @@ CodeFixer 不依赖 GitHub Actions、PR 或特定托管平台作为开发门禁�
 
 ### Bootstrap
 
+```powershell
+.\scripts\bootstrap.ps1
+```
+
 ```bash
-python scripts/bootstrap.py
+./scripts/bootstrap.sh
 ```
 
 需要完整浏览器测试环境：
 
-```bash
-python scripts/bootstrap.py --with-browser
-```
+在对应入口后追加 `--with-browser`。
 
 需要从源码准备 production build：
 
-```bash
-python scripts/bootstrap.py --production
-```
+在对应入口后追加 `--production`。
 
 ### 启动
 
-```bash
-python scripts/run.py --build
-```
-
-Windows：
-
 ```powershell
 .\scripts\run.ps1 --build
+```
+
+Linux：
+
+```bash
+backend/.venv/bin/python scripts/run.py --build
 ```
 
 ### 自测
 
 快速回归：
 
-```bash
-python scripts/test.py
-```
+Windows 使用 `.\scripts\test.ps1`，Linux 使用 `./scripts/test-fast.sh`；两个入口都只调用项目虚拟环境，不回退到系统 `python`。
 
 完整浏览器 / E2E / visual：
 

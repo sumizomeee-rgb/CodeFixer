@@ -63,7 +63,13 @@ def main() -> int:
     parser.add_argument("--all", action="store_true", help="include browser component + same-origin E2E/visual tests")
     args = parser.parse_args()
     if not VENV_PY.exists() or not (FRONTEND / "node_modules").is_dir():
-        raise SystemExit("Project dependencies missing. Run: python scripts/bootstrap.py --with-browser")
+        raise SystemExit("Project dependencies missing. Run scripts/bootstrap.ps1 or scripts/bootstrap.sh")
+    probe = subprocess.run(
+        [str(VENV_PY), "-c", "import sys; assert sys.version_info >= (3,12) and sys.maxsize > 2**32"],
+        check=False,
+    )
+    if probe.returncode != 0:
+        raise SystemExit("backend/.venv must use 64-bit CPython 3.12+. Remove it and rerun bootstrap.")
     npm = npm_command()
     env = os.environ.copy()
     env["PYTHONPATH"] = str(ROOT / "backend" / "src")

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")/.."
-exec python scripts/readiness.py "$@"
+test -x backend/.venv/bin/python || { echo "Project venv missing; run scripts/bootstrap.sh" >&2; exit 1; }
+exec backend/.venv/bin/python scripts/readiness.py "$@"

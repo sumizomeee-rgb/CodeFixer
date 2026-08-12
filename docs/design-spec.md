@@ -120,7 +120,7 @@ CodeFixer 的仓库、安装包和部署文档必须自包含：
 - 带优先级的工单路由规则。
 - 唯一 `ModificationSource`。
 - 可选知识源。
-- Discovery、Repair、Review 使用的 Agent profile。
+- 范围调查、正式定位、Repair、Review 使用的 Agent profile；范围调查与正式定位可以引用同一 profile，但必须是独立会话。
 - 允许修改的路径与文件类型。
 - 验证命令和超时。
 - 修复循环上限。
@@ -247,6 +247,7 @@ Claude Code、Codex、OpenCode 分别实现适配器。适配器不得预读业�
 ```text
 ingest
   → prepare
+  → scope_discovery
   → discovery
   → assess
       ├─ change_required
@@ -275,7 +276,8 @@ ingest
 |---|---|---|---|---|
 | `ingest` | 平台 | 外部工单 | 当前工单记录 | 数据库 |
 | `prepare` | 平台 | 最新工单、项目配置、当前基线 | 冻结快照、入口文档、输入指纹 | 任务产物目录 |
-| `discovery` | Discovery Agent | Discovery 入口路径 | `task-discovery.md/json` | Discovery 输出目录 |
+| `scope_discovery` | 范围调查 Agent（独立会话） | 范围调查入口路径 | `scope-discovery.md/json` | 范围调查输出目录 |
+| `discovery` | 正式定位 Agent（独立会话） | Discovery 入口路径；其中只引用范围调查产物路径 | `task-discovery.md/json` | Discovery 输出目录 |
 | `assess` | 平台 | Discovery 产物与确定性门禁 | `change_required / no_change_claim / unresolved` | 数据库 |
 | `no_change_verify` | Repair/Verifier Agent | 固定入口路径 | `no-change-report.md/json` | 阶段输出目录 |
 | `workspace_prepare` | 平台 | 修改源与冻结基线 | 隔离工作区 manifest | 工作区 |
@@ -287,11 +289,18 @@ ingest
 | `deliver` | 平台动作执行器 | 冻结修改与动作配置快照 | Patch/MR 结果 | 配置的外部目标 |
 | `finalize` | 平台 | 全部阶段和动作结果 | 任务终态、索引、清理结果 | 数据库与产物目录 |
 
-### 6.3 Discovery Agent
+### 6.3 双 Agent 反查：范围调查与正式定位
 
-Discovery 是所有修复任务的固定阶段，不是高级开关。
+工单反查固定拆成两个独立 Agent 会话，不是把 Discovery 与 Repair 合称“双 Agent”，也不是高级开关：
 
-职责：
+1. `scope_discovery` 负责快速识别大致模块、候选路径与检索入口，只产出定位线索。
+2. `discovery` 负责正式定位。它完整读取固定路径的范围调查文档，再从当前冻结基线重新读取源码、核实线索并形成证据链。
+
+两个会话可以使用相同或不同的 Agent profile，但必须分别启动、分别记录模型用量和失败原因。第一阶段产物是不可信的调查笔记，不是代码事实、正式证据或对第二阶段的指令；第二阶段不能仅凭笔记下结论。
+
+平台不得把第一阶段正文拼进第二阶段 Prompt。第二阶段入口文档只写范围调查产物的绝对路径及其信任边界，Runtime 仍只收到入口文档绝对路径和最小启动指令。范围调查失败时任务以 `scope_discovery_failed` 结束；正式定位无法反查时以 `discovery_unresolved` 结束，界面展示阶段、原因、已核实线索和建议动作。
+
+正式 Discovery 职责：
 
 - 完整读取冻结工单、评论、附件清单和项目策略。
 - 在唯一修改源内搜索与工单相关的模块、符号、配置、资源、协议和历史变更。
@@ -302,7 +311,7 @@ Discovery 是所有修复任务的固定阶段，不是高级开关。
   - 当前基线可能已经无需修改。
   - 无法可靠定位。
 
-Discovery 不得：
+两个 Discovery 阶段均不得：
 
 - 修改代码。
 - 创建分支、提交、Patch 或 MR。
@@ -320,7 +329,7 @@ Discovery 不得：
 - 版本号、关联提交、MR、变更记录。
 - 附件中明确引用的对象。
 
-Discovery 未覆盖强线索时允许同一 Agent 补查一次。补查后仍无法定位则失败，不无限循环，也不按读取文件数生成伪置信度。
+正式 Discovery 未覆盖强线索时允许正式定位 Agent 补查一次。补查仍通过新的固定入口文件发起，不把遗漏线索或旧报告正文拼入命令行 Prompt。补查后仍无法定位则失败，不无限循环，也不按读取文件数生成伪置信度。
 
 ### 6.5 Repair 与有界修复循环
 
@@ -370,6 +379,10 @@ data/tasks/<task-id>/
       config-snapshot.json
     stages/
       prepare/
+      scope-discovery/
+        entry.md
+        scope-discovery.md
+        scope-discovery.json
       discovery/
         entry.md
         task-discovery.md
@@ -1038,6 +1051,8 @@ projects: []
 ### 16.4 依赖检查与 Readiness
 
 依赖检查是平台能力，不是部署人员自行阅读外部文档后完成的隐式步骤。它分为两层：
+
+CodeFixer 的 Python 运行时基线固定为 **64 位 CPython 3.12+**。Bootstrap 必须在创建虚拟环境前校验实现、版本和位宽；启动、测试与 systemd 必须直接调用仓库内 `backend/.venv`，不得在虚拟环境缺失或无效时静默回退到系统 `python`。
 
 1. 全局启动检查由 `GET /api/readiness` 暴露，决定服务是否可接收新任务。
 2. 项目 Preflight 由保存配置、手工测试、切换全自动和 TaskRun `prepare` 调用，决定具体项目及最终动作是否可执行。
@@ -1902,7 +1917,8 @@ codefixer/materialize/<task-run-id>/<change-version>/<action-id>/<action-version
 
 | 阶段 | Agent profile | 必须自行读取 | 可访问代码 | 写入范围 |
 |---|---|---|---|---|
-| `discovery` | discovery profile | ticket、project policy、source manifest、附件清单 | 唯一修改源只读视图、受控知识工具 | discovery 输出目录 |
+| `scope_discovery` | scope discovery profile | ticket、project policy、source manifest、附件清单 | 唯一修改源只读视图、受控知识工具 | scope-discovery 输出目录 |
+| `discovery` | discovery profile | ticket、project policy、source manifest、附件清单、scope-discovery 产物 | 唯一修改源只读视图、受控知识工具 | discovery 输出目录 |
 | `no_change_verify` | repair profile 的只读模式 | ticket、Discovery、source manifest | 唯一修改源只读视图、验证工具 | no-change 输出目录 |
 | `repair` | repair profile | ticket、Discovery、project policy、workspace manifest、上轮反馈 | 唯一隔离工作区 | 隔离工作区与 repair 输出目录 |
 | `review(mode=change)` | review profile | ticket、Discovery、候选 diff、verification | 候选工作区只读视图 | review 输出目录 |

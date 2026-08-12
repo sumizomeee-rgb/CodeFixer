@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Request
 
 from codefixer import __version__
 from codefixer.infrastructure.database import inspect_database
+from codefixer.infrastructure.dependency_checks import inspect_executable_dependencies
 
 router = APIRouter(prefix="/api", tags=["system"])
 
@@ -34,14 +36,16 @@ def readiness(request: Request) -> dict[str, object]:
     writable, writable_reason = _writable_directory(loaded.data_root)
     db = inspect_database(db_path)
     frontend_ready = (loaded.frontend_dist / "index.html").is_file()
-    checks = [
-        {"id": "config.loaded", "status": "ready", "detail": str(loaded.base_config_path)},
-        {"id": "storage.data_root", "status": "ready" if writable else "failed", "detail": str(loaded.data_root) if writable else writable_reason},
-        {"id": "sqlite.wal", "status": "ready" if bool(db.get("ready")) else "failed", "detail": db},
-        {"id": "frontend.dist", "status": "ready" if frontend_ready else "failed", "detail": str(loaded.frontend_dist)},
+    checks: list[dict[str, Any]] = [
+        {"id": "config.loaded", "status": "ready", "summary": "配置已加载", "detail": str(loaded.base_config_path)},
+        {"id": "storage.data_root", "status": "ready" if writable else "failed", "summary": "数据目录可写" if writable else "数据目录不可写", "detail": str(loaded.data_root) if writable else writable_reason},
+        {"id": "sqlite.wal", "status": "ready" if bool(db.get("ready")) else "failed", "summary": "SQLite WAL 可用" if bool(db.get("ready")) else "SQLite WAL 不可用", "detail": db},
+        {"id": "frontend.dist", "status": "ready" if frontend_ready else "failed", "summary": "Web 构建产物存在" if frontend_ready else "Web 构建产物缺失", "detail": str(loaded.frontend_dist)},
+        *inspect_executable_dependencies(loaded),
     ]
-    ready = all(item["status"] == "ready" for item in checks)
-    return {"status": "ready" if ready else "not_ready", "ready": ready, "checks": checks, "environment": os.environ.get("CODEFIXER_ENV", "development")}
+    failed = any(item["status"] == "failed" for item in checks)
+    warning = any(item["status"] == "warning" for item in checks)
+    return {"status": "not_ready" if failed else ("warning" if warning else "ready"), "ready": not failed, "checks": checks, "environment": os.environ.get("CODEFIXER_ENV", "development")}
 
 
 @router.get("/dashboard")

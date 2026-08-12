@@ -29,7 +29,7 @@ def test_health_and_readiness__when_phase0_runtime_is_valid(tmp_path: Path):
         readiness = client.get("/api/readiness")
         assert readiness.status_code == 200
         assert readiness.json()["ready"] is True
-        assert {x["id"] for x in readiness.json()["checks"]} == {
+        assert {x["id"] for x in readiness.json()["checks"]} >= {
             "config.loaded",
             "storage.data_root",
             "sqlite.wal",
@@ -39,3 +39,17 @@ def test_health_and_readiness__when_phase0_runtime_is_valid(tmp_path: Path):
         page = client.get("/")
         assert page.status_code == 200
         assert "CodeFixer" in page.text
+
+
+def test_readiness__missing_unused_dependency_is_warning(tmp_path: Path):
+    loaded = _loaded(tmp_path)
+    loaded.config.executableBindings = {
+        "optional-cli": {"command": ["codefixer-command-that-does-not-exist"]}
+    }
+    with TestClient(create_app(loaded)) as client:
+        payload = client.get("/api/readiness").json()
+
+    check = next(item for item in payload["checks"] if item["id"] == "dependency.optional-cli")
+    assert payload["ready"] is True
+    assert payload["status"] == "warning"
+    assert check["status"] == "warning"
