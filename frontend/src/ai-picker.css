@@ -1,0 +1,15 @@
+.ai-picker-modal{width:min(520px,100%);padding:22px}
+.ai-picker-modal .modal-head{margin-bottom:14px}
+.ai-picker-modal .modal-head p{margin:6px 0 0;color:var(--muted);font-size:11px;line-height:1.55}
+.ai-choice-list{display:grid;gap:7px}
+.ai-choice{width:100%;display:grid;grid-template-columns:34px minmax(0,1fr) auto;align-items:center;gap:11px;padding:10px 11px;border:1px solid var(--line);border-radius:11px;background:transparent;color:var(--text);text-align:left;transition:border-color .16s ease,background-color .16s ease}
+.ai-choice:hover:not(:disabled){border-color:color-mix(in srgb,var(--signal) 48%,var(--line));background:var(--signalSoft)}
+.ai-choice span,.ai-choice b,.ai-choice small{display:block}
+.ai-choice b{font-size:12px}
+.ai-choice small{margin-top:3px;color:var(--muted);font-size:9px;line-height:1.45}
+.ai-choice em{font-style:normal;font-size:9px;font-weight:700;color:var(--tertiary)}
+.ai-choice:hover:not(:disabled) em{color:var(--signal)}
+.ai-choice:disabled{cursor:default;opacity:.58;background:var(--surface2)}
+.ai-choice:disabled em{color:var(--success)}
+.ai-picker-modal .runtime-mark{width:30px;height:30px}
+.ai-picker-modal .runtime-mark svg{width:19px;height:19px}
