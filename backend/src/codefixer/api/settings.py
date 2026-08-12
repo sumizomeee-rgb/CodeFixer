@@ -7,6 +7,8 @@ from pydantic import BaseModel
 
 from codefixer.api.common import config_store, require_if_match
 from codefixer.config import AppConfig
+from codefixer.infrastructure.database import connect_database
+from codefixer.infrastructure.task_store import TaskStore
 
 router = APIRouter(prefix="/api/settings", tags=["settings"])
 
@@ -36,7 +38,23 @@ def update_settings(body: AppConfig, request: Request, response: Response) -> di
 def update_execution_mode(body: ExecutionModeBody, request: Request, response: Response) -> dict[str, object]:
     store = config_store(request)
     require_if_match(request, store)
+    previous = store.loaded.config.execution.mode
     store.set_execution_mode(body.mode)
     request.app.state.loaded_config = store.loaded
+    activated = 0
+    if previous != "automatic" and body.mode == "automatic":
+        connection = connect_database(request.app.state.db_path)
+        try:
+            tasks = TaskStore(connection)
+            for task in tasks.list_tasks("awaiting_start"):
+                try:
+                    tasks.start_task(str(task["id"]), "automatic")
+                    activated += 1
+                except ValueError:
+                    # A task can become unroutable/ineligible between list and activation.
+                    # It stays awaiting_start instead of being guessed into execution.
+                    continue
+        finally:
+            connection.close()
     response.headers["ETag"] = f'"{store.etag}"'
-    return {"mode": store.loaded.config.execution.mode, "etag": store.etag}
+    return {"mode": store.loaded.config.execution.mode, "etag": store.etag, "activatedTasks": activated}
