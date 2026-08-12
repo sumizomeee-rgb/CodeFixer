@@ -10,24 +10,13 @@ Web 管理界面与 API 同源，第一版正式服务端口统一为 `9522`。
 
 CodeFixer 的第一版施工以以下规范共同作为基准：
 
-1. [产品与技术设计 SPEC](docs/design-spec.md)  
-   定义产品语义、领域模型、任务协议、状态机、Artifact、并发、幂等、交付与部署边界。
-2. [工程就绪规范](docs/engineering-readiness-spec.md)  
-   定义正式 Feature Coding 前的 Phase 0、Definition of Done、回归门禁和端到端施工要求。
-3. [仓库结构与依赖规范](docs/architecture/repository-structure.md)  
-   定义 backend/frontend/contracts/tests/deploy 的目录、分层和依赖方向。
-4. [Web 设计系统与交互规范](docs/design/design-system.md)  
-   定义 CodeFixer 的“Repair Signal / 自动维修控制塔”视觉语言、关键组件、动效和视觉回归基线。
-5. [测试、回归与自测策略](docs/testing/test-strategy.md)  
-   定义 unit、contract、integration、Scenario Regression、E2E、visual、故障注入和 Release Gate。
+1. [产品与技术设计 SPEC](docs/design-spec.md)
+2. [工程就绪规范](docs/engineering-readiness-spec.md)
+3. [仓库结构与依赖规范](docs/architecture/repository-structure.md)
+4. [Web 设计系统与交互规范](docs/design/design-system.md)
+5. [测试、回归与自测策略](docs/testing/test-strategy.md)
 
-仅在对应路径存在的本机 Windows 开发环境中，Agent 还可以读取：
-
-- [本机开发 Agent 参考路径](docs/local-development-references.md)
-
-该文件只用于本机开发辅助，不属于运行依赖，也不得让公开仓库依赖其中的本地项目或绝对路径。
-
-## 已确定的第一版边界
+## 第一版边界
 
 - 工单来源：Redmine、TAPD。
 - 修改源：Git、SVN。
@@ -37,71 +26,107 @@ CodeFixer 的第一版施工以以下规范共同作为基准：
 - 一个 Bug 只修改一个代码源，但可以执行多个最终动作。
 - 不实现 GitHub PR、自动合并 MR、SVN 直接提交和多修改源任务。
 
-## 当前阶段
+## 当前实现
 
-**Phase 0：Engineering Foundation 已完成，仓库达到 `ready_for_implementation`。**
+工程基础与 V1 核心流水线已经进入可运行实现：
 
-已经建立并通过 Linux CI 验证：
+- FastAPI + SQLite WAL + migrations。
+- Redmine / TAPD 增量收单与长期 Task 身份。
+- Discovery / Repair / Review 独立 Agent Runtime。
+- Claude Code / Codex / OpenCode 独立 CLI Adapter。
+- Git 独立 worktree；SVN lease + 清理策略。
+- 平台真实 diff、越权路径检查、验证命令与验证污染隔离。
+- `changed` 与严格证据化 `no_change` 两种健康终态。
+- Freeze Change：不可变 patch、文件内容快照、hash、verification、review。
+- Patch 幂等交付。
+- GitLab MR 多目标交付、partial success、远端对账与防重复创建。
+- Freeze 前/后不同的崩溃恢复策略与 SQLite Scheduler。
+- 实时维修控制台、任务证据 Drawer、Provider、Project、Settings 自助配置界面。
+- Delivery-only retry：冻结后交付失败可以只重试外部动作，不重新调用 Agent。
 
-- 规范源码目录与依赖边界。
-- Contracts/Schema 单一事实源。
-- FastAPI + SQLite WAL + migration 最小纵切。
-- `/api/health`、`/api/readiness` 与 React SPA 同源托管。
-- React/Vite production build。
-- CodeFixer Repair Signal Design System 第一版。
-- StageRail、TaskCard、Failure/NoChange 等关键视觉语义。
-- pytest、Vitest Browser Mode、Playwright E2E 与 visual regression。
-- Phase 0 Scenario fixture。
-- GitHub Actions 仅作为软质量检查，不作为开发阻断门禁。
-- Linux systemd 服务骨架与稳定脚本入口。
-- npm lockfile 与 Linux/Chromium visual golden baseline。
+## 开发与迁移
 
-详细证据见 [Phase 0 自测报告](docs/testing/reports/phase0-self-test.md)。
-
-后续功能施工遵循 SPEC、Scenario Regression 与视觉回归；CI 只提供 advisory 反馈，开发不绑定 GitHub、PR 或单一机器环境。
-
-## 可迁移开发 / 部署
+CodeFixer 不依赖 GitHub Actions、PR 或特定托管平台作为开发门禁。质量标准由仓库文档和本地测试定义。
 
 宿主机尽量只要求：
 
 - Python 3.12+
-- Node.js 22（或满足当前 Vite 要求的兼容 Node）与 npm
-- 按实际项目启用的外部 CLI，例如 Git、SVN、Claude Code、Codex、OpenCode
+- Node.js 22 + npm
+- 实际启用的外部 CLI：Git、SVN、Claude Code、Codex、OpenCode
 
-项目依赖默认安装在仓库目录内，并在迁移到新机器后重新生成：
+项目依赖默认安装在仓库目录内：
 
 - `backend/.venv`
 - `frontend/node_modules`
 
-不要跨机器复制虚拟环境或 `node_modules`。复制/clone 仓库后执行 bootstrap 即可。
+这两个目录都应在新机器重新生成，不跨机器复制。
 
-## 稳定命令
+### Bootstrap
 
 ```bash
 python scripts/bootstrap.py
-python scripts/run.py
+```
+
+需要完整浏览器测试环境：
+
+```bash
+python scripts/bootstrap.py --with-browser
+```
+
+需要从源码准备 production build：
+
+```bash
+python scripts/bootstrap.py --production
+```
+
+### 启动
+
+```bash
+python scripts/run.py --build
+```
+
+Windows：
+
+```powershell
+.\scripts\run.ps1 --build
+```
+
+### 自测
+
+快速回归：
+
+```bash
 python scripts/test.py
+```
+
+完整浏览器 / E2E / visual：
+
+```bash
 python scripts/test.py --all
 ```
 
-Windows 也可使用：
+Windows：
 
 ```powershell
-.\scripts\bootstrap.ps1
-.\scripts\run.ps1
-.\scripts\test.ps1
+.\scripts\test.ps1 --all
 ```
 
-Bash 兼容包装仍保留：
+完整 E2E 使用临时 `CODEFIXER_DATA_ROOT`，不会覆盖真实任务数据库。
 
-```bash
-./scripts/bootstrap.sh
-./scripts/test-fast.sh
-./scripts/test-all.sh
-./scripts/build.sh
-./scripts/readiness.sh
-```
+## 配置原则
 
-## 仓库状态
+- 共享项目只保存 `pathBinding` / `executableRef` / `SecretRef` 等稳定引用。
+- 当前机器的仓库路径和可执行程序可以放在 local override。
+- Secret 明文独立存储，Web API 只返回 `configured` 状态。
+- 运行中 TaskRun 冻结输入；配置热更新只影响后续 Run。
 
-工程基础已就绪，第一版功能施工正式进行中。
+## 外部真实环境验证
+
+本地回归覆盖 Fake Redmine/TAPD/GitLab、真实 Git worktree、Scheduler/Recovery、changed/no_change、取消、Repair/Review 循环和交付幂等。
+
+部署到公司环境后仍应补一轮真实 smoke：
+
+- SVN CLI + 真实工作副本。
+- Redmine / TAPD 真实只读凭据。
+- GitLab 项目、Token、目标分支和 MR 权限。
+- 实际启用的 Claude Code / Codex / OpenCode CLI 登录状态与权限。
