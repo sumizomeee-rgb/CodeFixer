@@ -1,8 +1,10 @@
 export type TaskStatus = 'awaiting_start'|'queued'|'running'|'cancel_requested'|'completed'|'failed'|'canceled'
 export type TaskResult = 'changed'|'no_change'|null
-export type TaskRun = { id:string; status:string; execution_mode_snapshot:string; created_at:string; started_at?:string|null; finished_at?:string|null }
+export type StageRun = { id:number; stage_id:string; attempt:number; status:string; started_at?:string|null; finished_at?:string|null; output_path?:string|null; failure?:Record<string,unknown>|null }
+export type ArtifactRef = { id:number; stage_id:string; artifact_type:string; relative_path:string; sha256:string; size_bytes:number; attempt?:number|null }
+export type DeliveryTarget = { id:number; target_key:string; status:string; outcome?:string|null; external_id?:string|null; external_url?:string|null; remote_ref?:string|null }
+export type DeliveryAction = { id:number; action_id:string; action_type:string; status:string; outcome?:string|null; result?:Record<string,unknown>|null; targets?:DeliveryTarget[] }
+export type TaskRun = { id:string; status:string; execution_mode_snapshot:string; created_at:string; started_at?:string|null; finished_at?:string|null; stages?:StageRun[]; artifacts?:ArtifactRef[]; delivery_actions?:DeliveryAction[] }
 export type TaskEvent = { id:number; event_type:string; created_at:string; payload:Record<string,unknown> }
-export type TaskRecord = {
-  id:string; project_id:string; status:TaskStatus; result:TaskResult; provider_instance_id:string; external_ticket_id:string; title:string;
-  current_run_id?:string|null; created_at:string; updated_at:string; runs?:TaskRun[]; events?:TaskEvent[]
-}
+export type TaskRecord = { id:string; project_id:string|null; status:TaskStatus; result:TaskResult; provider_instance_id:string; external_ticket_id:string; title:string; current_run_id?:string|null; created_at:string; updated_at:string; failure?:Record<string,unknown>|null; runs?:TaskRun[]; events?:TaskEvent[] }
+export type DashboardData = { metrics:{active:number;queued:number;running:number;completedChanged:number;completedNoChange:number;failed:number}; recentTasks:TaskRecord[]; attention:TaskRecord[] }
