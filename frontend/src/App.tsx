@@ -26,7 +26,7 @@ export default function App() {
   }, [])
 
   const toggleMode = async () => {
-    if (!etag) { setToast('配置尚未加载，稍后重试'); return }
+    if (!etag) { setToast('配置尚未加载，请稍后再试'); return }
     const next: ExecutionMode = mode === 'automatic' ? 'awaitingStart' : 'automatic'
     try {
       const r = await api.setExecutionMode(next, etag)
@@ -40,11 +40,11 @@ export default function App() {
 
   return <div className="app-shell">
     <header className="topbar">
-      <div className="brand"><span className="mark"><i/><i/><i/></span><div><b>CodeFixer</b><small>REPAIR CONTROL TOWER</small></div></div>
+      <div className="brand"><span className="mark"><i/><i/><i/></span><b>CodeFixer</b></div>
       <ModeController mode={mode} onClick={() => setConfirmMode(true)}/>
-      <div className="top-actions"><span className={`health ${ready === false ? 'health-failed' : ''}`}><i/>{ready === null ? '检查中' : ready ? '系统就绪' : '系统未就绪'}</span><button className="icon-btn" aria-label="切换主题" onClick={() => setDark(v => !v)}>{dark ? '☀' : '◐'}</button></div>
+      <div className="top-actions"><span className={`health ${ready === false ? 'health-failed' : ''}`}><i/>{ready === null ? '检查中' : ready ? '系统正常' : '需要检查'}</span><button className="icon-btn" aria-label="切换主题" onClick={() => setDark(v => !v)}>{dark ? '☀' : '◐'}</button></div>
     </header>
-    <aside className="navrail">{nav('dashboard','⌁','控制台')}{nav('tasks','≡','任务')}{nav('projects','◇','项目')}{nav('sources','⇄','来源')}{nav('settings','⚙','系统设置')}</aside>
+    <aside className="navrail">{nav('dashboard','⌁','首页')}{nav('tasks','≡','任务')}{nav('projects','◇','项目')}{nav('sources','⇄','来源')}{nav('settings','⚙','设置')}</aside>
     <main>
       {page === 'dashboard' ? <DashboardPage onOpenTasks={() => setPage('tasks')}/> :
        page === 'tasks' ? <TasksPage/> :
@@ -52,7 +52,7 @@ export default function App() {
        page === 'sources' ? <ProvidersPage/> :
        <SettingsPage onModeChanged={(m,e) => { setMode(m); setEtag(e) }}/>} 
     </main>
-    {confirmMode && <div className="modal-backdrop"><div className="confirm-modal" role="dialog" aria-modal="true"><span className="signal-kicker">EXECUTION MODE</span><h2>{mode === 'automatic' ? '切换到「待我开始」？' : '切换到「全自动」？'}</h2><p>{mode === 'automatic' ? '新收录的 Bug 将等待你点击一次开始；已经授权的任务继续执行。' : '已收录且仍 eligible 的待开始任务会进入队列，所有确定性门禁仍然生效。'}</p><div className="modal-actions"><button className="ghost" onClick={() => setConfirmMode(false)}>取消</button><button className="primary compact" onClick={() => void toggleMode()}>确认切换</button></div></div></div>}
+    {confirmMode && <div className="modal-backdrop"><div className="confirm-modal" role="dialog" aria-modal="true"><h2>{mode === 'automatic' ? '切换到「待我开始」？' : '切换到「全自动」？'}</h2><p>{mode === 'automatic' ? '之后收到的新问题会先等待确认，已经开始的任务不受影响。' : '已收录且仍可处理的任务会自动进入队列。'}</p><div className="modal-actions"><button className="ghost" onClick={() => setConfirmMode(false)}>取消</button><button className="primary compact" onClick={() => void toggleMode()}>确认</button></div></div></div>}
     {toast && <button className="toast" onClick={() => setToast('')}>{toast}</button>}
   </div>
 }
