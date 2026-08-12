@@ -1,24 +1,22 @@
-import { StageRail } from '../design-system/StageRail'
+import { useEffect, useState } from 'react'
+import type { DashboardData, StageRun, TaskRecord } from '../entities/task'
+import { StageRail, type StageItem, type StageState } from '../design-system/StageRail'
+import { api } from '../lib/api'
 
-function Metric({value,label,tone='default'}:{value:string,label:string,tone?:string}) {
-  return <div className={`metric metric-${tone}`}><span>{value}</span><small>{label}</small></div>
-}
+const stageLabels:Record<string,string>={prepare:'Prepare',discovery:'Discovery',no_change_verify:'No change',repair:'Repair',verify:'Verify',review:'Review',pre_delivery_check:'Stability',freeze_change:'Freeze',deliver:'Deliver'}
+const state=(value:string):StageState=>value==='completed'?'done':value==='running'?'running':value==='failed'?'failed':value==='reconciling'?'reconciling':value==='canceled'?'skipped':'queued'
+const duration=(stage:StageRun)=>{if(!stage.started_at)return stage.status;if(!stage.finished_at)return stage.status==='running'?'live':stage.status;const ms=new Date(stage.finished_at).getTime()-new Date(stage.started_at).getTime();return ms<1000?`${ms}ms`:ms<60000?`${(ms/1000).toFixed(1)}s`:`${Math.floor(ms/60000)}m ${Math.floor(ms/1000)%60}s`}
+function rail(run:TaskRecord['runs'] extends Array<infer R>?R:never):StageItem[]{const stages=(run?.stages??[]) as StageRun[];const grouped=new Map<string,StageRun>();for(const item of stages)grouped.set(item.stage_id,item);const order=['prepare','discovery','repair','verify','review','pre_delivery_check','freeze_change','deliver'];return order.filter(id=>grouped.has(id)||['prepare','discovery','repair','verify','review','deliver'].includes(id)).map(id=>{const item=grouped.get(id);return{label:stageLabels[id]??id,meta:item?duration(item):'queued',state:item?state(item.status):'queued'}})}
+function Metric({value,label,tone='default'}:{value:string|number,label:string,tone?:string}){return <div className={`metric metric-${tone}`}><span>{value}</span><small>{label}</small></div>}
+function LiveTask({task}:{task:TaskRecord}){const run=task.runs?.[0];return <article className="task-card"><div className="task-top"><div><span className="ticket">{task.provider_instance_id} #{task.external_ticket_id}</span><h3>{task.title}</h3></div><span className={`status-pill ${task.status==='running'?'running':''}`}>{task.status==='running'?'施工中':task.status==='queued'?'排队中':task.status}</span></div><div className="task-meta"><span>{task.project_id??'未路由'}</span><span>{run?.id?.slice(0,10)??'—'}</span><span>{run?.stages?.length??0} stage records</span></div>{run?<StageRail stages={rail(run)}/>:null}<div className="task-footer"><span>{run?.status??task.status}</span><span className="mono">{task.id.slice(0,12)}</span></div></article>}
 
-function TaskCard({id,title}:{id:string,title:string}) {
-  return <article className="task-card">
-    <div className="task-top"><div><span className="ticket">{id}</span><h3>{title}</h3></div><span className="status-pill running">施工中</span></div>
-    <div className="task-meta"><span>Product / Lua</span><span>Git · trunk@8a31c42</span><span>Claude Code</span></div>
-    <StageRail />
-    <div className="task-footer"><span>Repair loop ×1</span><span className="mono">elapsed 03:11</span></div>
-  </article>
-}
-
-export function DashboardPage() {
-  return <>
-    <section className="hero"><div><span className="eyebrow">WED · AUG 12</span><h1>维修控制台</h1><p>把每一个 Bug 变成有证据、可验证、可交付的修复。</p></div><div className="slots"><span>并发槽</span><b>2 / 3</b><div className="slotbar"><i/><i/><i className="empty"/></div></div></section>
-    <section className="metrics"><Metric value="12" label="24h 已交付" tone="success"/><Metric value="3" label="运行中" tone="running"/><Metric value="2" label="无需修改" tone="nochange"/><Metric value="1" label="需要处理" tone="failed"/><Metric value="$4.82" label="Agent 费用"/></section>
-    <section className="content-grid"><div><div className="section-head"><div><span className="signal-kicker">LIVE SIGNAL</span><h2>正在维修</h2></div><button className="ghost">查看全部 18 →</button></div><div className="task-stack"><TaskCard id="TAPD #124902" title="【4.7】【商城】购买礼包后偶现红点未刷新"/><TaskCard id="RM #98142" title="切换角色后音频遮挡参数未恢复"/></div></div>
-    <aside className="attention"><div className="section-head"><div><span className="signal-kicker">ATTENTION</span><h2>需要处理</h2></div></div><div className="failure-card"><span className="failure-code">GITLAB · PARTIAL DELIVERY</span><h3>2 / 3 个目标分支已创建 MR</h3><p>release/4.7 在 cherry-pick 时产生冲突。已成功的 MR 保留，不会重复创建。</p><div className="side-effects"><b>外部副作用</b><span>✓ trunk · MR !4812</span><span>✓ release/4.6 · MR !4813</span><span className="bad">× release/4.7 · conflict</span></div><button className="primary">查看并重试失败目标</button></div>
-    <div className="evidence-card"><span className="signal-kicker teal">NO CHANGE</span><h3>当前基线无需修改</h3><p>已有 2 项当前状态证据，并通过独立 Review。</p><div className="evidence-row"><span>基线</span><code>4d92e9a</code></div><div className="evidence-row"><span>证据</span><b>2 / 2</b></div></div></aside></section>
-  </>
+export function DashboardPage({onOpenTasks}:{onOpenTasks:()=>void}){
+ const[data,setData]=useState<DashboardData|null>(null);const[error,setError]=useState('')
+ const load=()=>api.dashboard().then(setData).catch(e=>setError(e instanceof Error?e.message:'控制台加载失败'))
+ useEffect(()=>{load();const timer=setInterval(load,3000);return()=>clearInterval(timer)},[])
+ const metrics=data?.metrics??{active:0,queued:0,running:0,completedChanged:0,completedNoChange:0,failed:0};const active=(data?.recentTasks??[]).filter(t=>['queued','running','cancel_requested'].includes(t.status)).slice(0,4)
+ return <><section className="hero"><div><span className="eyebrow">LIVE · SQLITE TRUTH</span><h1>维修控制台</h1><p>每一个 Bug 都沿同一条证据链，从收单走到冻结修改与可对账交付。</p></div><div className="slots"><span>活跃任务</span><b>{metrics.active}</b><div className="slotbar"><i className={metrics.active>0?'':'empty'}/><i className={metrics.active>1?'':'empty'}/><i className={metrics.active>2?'':'empty'}/></div></div></section>{error&&<div className="inline-alert">{error}</div>}
+ <section className="metrics"><Metric value={metrics.completedChanged} label="已交付修复" tone="success"/><Metric value={metrics.running} label="运行中" tone="running"/><Metric value={metrics.completedNoChange} label="无需修改" tone="nochange"/><Metric value={metrics.failed} label="需要处理" tone="failed"/><Metric value={metrics.queued} label="排队中"/></section>
+ <section className="content-grid"><div><div className="section-head"><div><span className="signal-kicker">LIVE SIGNAL</span><h2>正在维修</h2></div><button className="ghost" onClick={onOpenTasks}>查看全部 →</button></div><div className="task-stack">{active.length?active.map(t=><LiveTask task={t} key={t.id}/>):<div className="quiet-panel"><b>当前没有正在执行的任务</b><span>Provider 收到符合路由规则的 Bug 后，这里会立即出现真实 Stage 信号。</span></div>}</div></div>
+ <aside className="attention"><div className="section-head"><div><span className="signal-kicker">ATTENTION</span><h2>需要处理</h2></div></div>{(data?.attention??[]).length?(data?.attention??[]).slice(0,3).map(t=><div className="failure-card" key={t.id}><span className="failure-code">{String((t.failure as Record<string,unknown>|null)?.code??t.status).toUpperCase()}</span><h3>{t.title}</h3><p>{String((t.failure as Record<string,unknown>|null)?.summary??'任务需要人工关注。')}</p><button className="primary" onClick={onOpenTasks}>打开任务证据</button></div>):<div className="evidence-card"><span className="signal-kicker teal">CONTROL TOWER CLEAR</span><h3>没有待处理失败</h3><p>失败、部分交付和取消请求会优先出现在这里；成功不会掩盖外部副作用。</p></div>}</aside></section></>
 }
