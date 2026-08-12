@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeFixer no-change report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "reason", "source", "claim", "evidence", "limitations"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "reason": {"enum": ["already_fixed", "not_present_on_current_baseline", "not_applicable_to_source", "upstream_fixed_during_run"]},
+    "source": {"type": "object", "additionalProperties": false, "required": ["id", "revision"], "properties": {"id": {"type": "string", "minLength": 1}, "revision": {"type": "string", "minLength": 1}}},
+    "claim": {"type": "string", "minLength": 1},
+    "evidence": {"type": "array", "minItems": 2, "items": {"type": "object"}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}
