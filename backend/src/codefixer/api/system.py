@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from typing import Any
 
 from fastapi import APIRouter, Request
 
@@ -35,33 +34,29 @@ def readiness(request: Request) -> dict[str, object]:
     writable, writable_reason = _writable_directory(loaded.data_root)
     db = inspect_database(db_path)
     frontend_ready = (loaded.frontend_dist / "index.html").is_file()
-
-    checks: list[dict[str, Any]] = [
-        {
-            "id": "config.loaded",
-            "status": "ready",
-            "detail": str(loaded.base_config_path),
-        },
-        {
-            "id": "storage.data_root",
-            "status": "ready" if writable else "failed",
-            "detail": str(loaded.data_root) if writable else writable_reason,
-        },
-        {
-            "id": "sqlite.wal",
-            "status": "ready" if bool(db.get("ready")) else "failed",
-            "detail": db,
-        },
-        {
-            "id": "frontend.dist",
-            "status": "ready" if frontend_ready else "failed",
-            "detail": str(loaded.frontend_dist),
-        },
+    checks = [
+        {"id": "config.loaded", "status": "ready", "detail": str(loaded.base_config_path)},
+        {"id": "storage.data_root", "status": "ready" if writable else "failed", "detail": str(loaded.data_root) if writable else writable_reason},
+        {"id": "sqlite.wal", "status": "ready" if bool(db.get("ready")) else "failed", "detail": db},
+        {"id": "frontend.dist", "status": "ready" if frontend_ready else "failed", "detail": str(loaded.frontend_dist)},
     ]
     ready = all(item["status"] == "ready" for item in checks)
-    return {
-        "status": "ready" if ready else "not_ready",
-        "ready": ready,
-        "checks": checks,
-        "environment": os.environ.get("CODEFIXER_ENV", "development"),
-    }
+    return {"status": "ready" if ready else "not_ready", "ready": ready, "checks": checks, "environment": os.environ.get("CODEFIXER_ENV", "development")}
+
+
+@router.get("/dashboard")
+def dashboard(request: Request) -> dict[str, object]:
+    from codefixer.infrastructure.database import connect_database
+    from codefixer.infrastructure.task_store import TaskStore
+
+    connection = connect_database(request.app.state.db_path)
+    try:
+        counts = {str(row["status"]): int(row["count"]) for row in connection.execute("SELECT status,COUNT(*) AS count FROM tasks GROUP BY status").fetchall()}
+        results = {str(row["result"]): int(row["count"]) for row in connection.execute("SELECT result,COUNT(*) AS count FROM tasks WHERE result IS NOT NULL GROUP BY result").fetchall()}
+        tasks = TaskStore(connection)
+        recent = tasks.list_tasks()[:8]
+        attention = [item for item in recent if item["status"] in {"failed", "cancel_requested"}]
+        active = sum(counts.get(status, 0) for status in ("queued", "running", "cancel_requested"))
+        return {"metrics": {"active": active, "queued": counts.get("queued", 0), "running": counts.get("running", 0), "completedChanged": results.get("changed", 0), "completedNoChange": results.get("no_change", 0), "failed": counts.get("failed", 0)}, "recentTasks": recent, "attention": attention}
+    finally:
+        connection.close()
