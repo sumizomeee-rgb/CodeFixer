@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
-
+import os
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,16 +17,30 @@ from codefixer.api.tasks import router as tasks_router
 from codefixer.config import LoadedConfig, load_config
 from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.database import initialize_database
+from codefixer.orchestration.scheduler import Scheduler
 
 
-def create_app(loaded_config: LoadedConfig | None = None) -> FastAPI:
+def create_app(loaded_config: LoadedConfig | None = None, *, start_background: bool | None = None) -> FastAPI:
     loaded = loaded_config or load_config()
+    background_enabled = (loaded_config is None) if start_background is None else start_background
+    if os.environ.get("CODEFIXER_DISABLE_BACKGROUND", "").strip().lower() in {"1", "true", "yes"}:
+        background_enabled = False
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         loaded.data_root.mkdir(parents=True, exist_ok=True)
         app.state.db_path = initialize_database(loaded.data_root)
-        yield
+        scheduler = None
+        if background_enabled:
+            contracts_root = Path(__file__).resolve().parents[3] / "contracts"
+            scheduler = Scheduler(db_path=app.state.db_path, config_store=app.state.config_store, contracts_root=contracts_root)
+            app.state.scheduler = scheduler
+            scheduler.start()
+        try:
+            yield
+        finally:
+            if scheduler is not None:
+                await scheduler.stop()
 
     app = FastAPI(title="CodeFixer API", version="0.1.0", lifespan=lifespan)
     install_error_handlers(app)
