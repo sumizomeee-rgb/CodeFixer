@@ -4,13 +4,15 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from codefixer.adapters.agents import parse_agent_profile
 from codefixer.config import LoadedConfig
 
 Check = dict[str, Any]
 
 
-def _check(check_id: str, ok: bool, summary: str, suggestion: str | None = None) -> Check:
-    value: Check = {"id": check_id, "status": "ready" if ok else "failed", "summary": summary}
+def _check(check_id: str, ok: bool, summary: str, suggestion: str | None = None, *, warning: bool = False) -> Check:
+    status = "warning" if warning and ok else ("ready" if ok else "failed")
+    value: Check = {"id": check_id, "status": status, "summary": summary}
     if suggestion:
         value["suggestion"] = suggestion
     return value
@@ -35,9 +37,9 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     repository_path = resolve_path_binding(loaded, repository_ref) if repository_ref else None
     repo_ok = repository_path is not None and repository_path.exists()
     checks.append(_check("source.repository", repo_ok, f"仓库路径：{repository_path}" if repository_path else "修改源 repositoryRef 无法解析", "在 pathBindings 中配置当前机器的仓库/工作副本路径" if not repo_ok else None))
-    if repository_path is not None and repository_path.exists() and source_type == "git":
+    if repo_ok and source_type == "git":
         checks.append(_check("source.git_layout", (repository_path / ".git").exists(), "Git 工作区可识别", "repositoryRef 必须指向 Git working tree"))
-    if repository_path is not None and repository_path.exists() and source_type == "svn":
+    if repo_ok and source_type == "svn":
         checks.append(_check("source.svn_layout", (repository_path / ".svn").exists(), "SVN 工作副本可识别", "repositoryRef 必须指向 SVN working copy"))
     executable_ref = str(source.get("executableRef", ""))
     binding = loaded.config.executableBindings.get(executable_ref, {}) if executable_ref else {}
@@ -49,7 +51,21 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     agents = project.get("agents") or {}
     for role in ("discovery", "repair", "review"):
         profile_id = str(agents.get(role, ""))
-        checks.append(_check(f"agent.{role}", bool(profile_id and profile_id in profiles), f"{role} profile：{profile_id or '未配置'}", "配置并引用有效 Agent profile" if not profile_id or profile_id not in profiles else None))
+        raw_profile = profiles.get(profile_id)
+        profile_ok = bool(profile_id and raw_profile is not None)
+        checks.append(_check(f"agent.{role}", profile_ok, f"{role} profile：{profile_id or '未配置'}", "配置并引用有效 Agent profile" if not profile_ok else None))
+        if not profile_ok or raw_profile is None:
+            continue
+        try:
+            profile = parse_agent_profile(raw_profile)
+        except (TypeError, ValueError) as exc:
+            checks.append(_check(f"agent.{role}.profile", False, f"Agent profile 无效：{exc}", "检查 runtime、executableRef、timeoutSeconds 与 extraArgs"))
+            continue
+        binding = loaded.config.executableBindings.get(profile.executable_ref, {})
+        agent_command = binding.get("command") if isinstance(binding, dict) else None
+        agent_executable = str(agent_command[0]) if isinstance(agent_command, list) and agent_command else ""
+        agent_executable_ok = bool(agent_executable and (Path(agent_executable).is_file() or shutil.which(agent_executable)))
+        checks.append(_check(f"agent.{role}.executable", agent_executable_ok, f"{profile.runtime} CLI：{agent_executable or profile.executable_ref}", "检查 Agent profile executableRef 与当前机器 executableBindings/PATH" if not agent_executable_ok else None))
     verification = project.get("verification") or {}
     steps = verification.get("steps") or []
     allow_no_tests = bool(verification.get("allowNoAutomatedTests"))
@@ -71,7 +87,7 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
             output_ref = str(action.get("outputDirectoryRef", ""))
             output = resolve_path_binding(loaded, output_ref) if output_ref else None
             output_ok = output is not None
-            if output is not None:
+            if output_ok:
                 try:
                     output.mkdir(parents=True, exist_ok=True)
                     probe = output / ".codefixer-preflight"
