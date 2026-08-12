@@ -1,2 +1,3 @@
 $ErrorActionPreference = "Stop"
-python "$PSScriptRoot\bootstrap.py" @args
+Set-Location (Join-Path $PSScriptRoot "..")
+python scripts/bootstrap.py @args
