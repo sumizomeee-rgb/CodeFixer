@@ -4,7 +4,11 @@
   "storage": {"dataRoot": "../../data"},
   "execution": {"mode": "awaitingStart", "maxConcurrentTasks": 3, "maxRepairAttempts": 3},
   "ticketProviders": [],
-  "agentProfiles": [],
+  "agentProfiles": [
+    {"id": "claude-code", "runtime": "claudeCode", "executableRef": "claude-code-cli", "timeoutSeconds": 1800},
+    {"id": "codex", "runtime": "codex", "executableRef": "codex-cli", "timeoutSeconds": 1800},
+    {"id": "opencode", "runtime": "opencode", "executableRef": "opencode-cli", "timeoutSeconds": 1800}
+  ],
   "knowledgeProviders": [],
   "connections": [],
   "executableBindings": {
