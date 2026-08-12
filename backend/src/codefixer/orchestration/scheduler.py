@@ -59,7 +59,12 @@ class Scheduler:
             if now - previous < interval:
                 continue
             self._provider_last_poll[provider_id] = now
-            await asyncio.to_thread(self._poll_provider, dict(provider))
+            try:
+                await asyncio.to_thread(self._poll_provider, dict(provider))
+            except Exception:
+                # A broken ticket source must not starve other providers or already-queued repairs.
+                # Manual provider test/poll endpoints expose the concrete provider error to admins.
+                continue
 
         capacity = loaded.config.execution.maxConcurrentTasks - len(self._active)
         if capacity <= 0:
@@ -79,6 +84,7 @@ class Scheduler:
             try:
                 await self.tick()
             except Exception:
+                # The next tick is still allowed to make progress; persistent task truth is in SQLite.
                 pass
             try:
                 await asyncio.wait_for(self._stop.wait(), timeout=self.sleep_seconds)
@@ -88,13 +94,32 @@ class Scheduler:
     def _execute(self, run_id: str) -> object:
         if self._execute_override is not None:
             return self._execute_override(run_id)
-        with connect_database(self.db_path) as connection:
-            executor = RunExecutor(
-                connection=connection,
-                config_store=self.config_store,
-                contracts_root=self.contracts_root,
-            )
-            return executor.execute(run_id)
+        try:
+            with connect_database(self.db_path) as connection:
+                executor = RunExecutor(
+                    connection=connection,
+                    config_store=self.config_store,
+                    contracts_root=self.contracts_root,
+                )
+                return executor.execute(run_id)
+        except Exception as exc:
+            # No unexpected Python exception is allowed to leave a durable run stuck in "running".
+            with connect_database(self.db_path) as connection:
+                tasks = TaskStore(connection)
+                try:
+                    tasks.fail_run(
+                        run_id,
+                        {
+                            "code": "unexpected_executor_error",
+                            "stage": "scheduler",
+                            "summary": str(exc),
+                            "retryable": True,
+                            "side_effects": [],
+                        },
+                    )
+                except KeyError:
+                    pass
+            raise
 
     def _poll_provider(self, provider: dict[str, object]) -> None:
         loaded = self.config_store.reload()
