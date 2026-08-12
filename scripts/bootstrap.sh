@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec python3 "$(dirname "$0")/bootstrap.py" "$@"
+cd "$(dirname "$0")/.."
+exec python scripts/bootstrap.py "$@"
