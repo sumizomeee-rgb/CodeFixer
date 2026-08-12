@@ -5,12 +5,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/codefixer/backend
+WorkingDirectory=%h/codefixer
 Environment=CODEFIXER_ENV=production
-ExecStart=%h/codefixer/backend/.venv/bin/python -m uvicorn codefixer.main:app --host 0.0.0.0 --port 9522
+Environment=PYTHONUNBUFFERED=1
+ExecStart=%h/codefixer/backend/.venv/bin/python -m codefixer
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=45
+KillMode=control-group
 
 [Install]
 WantedBy=default.target
