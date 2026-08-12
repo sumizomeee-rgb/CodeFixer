@@ -95,9 +95,27 @@ class GitSourceAdapter(CliSourceBase):
         if not candidate.patch_text:
             return
         patch_file = manifest.workspace_path.parent / f".{manifest.workspace_path.name}.candidate.patch"
-        patch_file.write_text(candidate.patch_text, encoding="utf-8")
+        patch_file.write_bytes(candidate.patch_text.encode("utf-8"))
         try:
-            self._run(["apply", "--index", "--binary", str(patch_file)], cwd=manifest.workspace_path)
+            # Git diff 来自规范化 index；在 Windows 上同时套用到 CRLF 工作区可能失败。
+            # 先恢复规范 index，再由 Git 物化工作区，确保恢复后的 diff 与冻结版本一致。
+            self._run(["apply", "--cached", "--binary", str(patch_file)], cwd=manifest.workspace_path)
+            deleted_raw = self._run(
+                ["diff", "--cached", "--name-only", "--diff-filter=D", "-z", manifest.base_revision, "--"],
+                cwd=manifest.workspace_path,
+            ).stdout
+            workspace_root = manifest.workspace_path.resolve()
+            for relative_path in (item for item in deleted_raw.split("\0") if item):
+                target = (workspace_root / Path(relative_path)).resolve()
+                try:
+                    target.relative_to(workspace_root)
+                except ValueError as exc:
+                    raise SourceCommandError(
+                        f"candidate deletion escapes workspace: {relative_path}"
+                    ) from exc
+                if target.is_file() or target.is_symlink():
+                    target.unlink()
+            self._run(["checkout-index", "--all", "--force"], cwd=manifest.workspace_path)
         finally:
             patch_file.unlink(missing_ok=True)
 
