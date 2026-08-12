@@ -1,0 +1,53 @@
+{
+  "candidate_scope": [
+    "src/clamp.py",
+    "src/clamp.py::clamp_percent",
+    "tests/test_clamp.py"
+  ],
+  "decision": "located",
+  "evidence": [
+    {
+      "content_sha256": null,
+      "id": "ticket-fake-haiku-001",
+      "kind": "ticket",
+      "location": "C:\\Users\\Administrator.KURO-20211209VQ\\AppData\\Local\\Temp\\codefixer-haiku-smoke-fx9p1shn\\data\\tasks\\task-3f6c04b3bd11bfe7\\runs\\run-329a949100ad428798\\snapshot\\ticket.raw.json",
+      "locator": "FAKE-HAIKU-001",
+      "revision": null,
+      "summary": "Ticket reports clamp_percent returns the wrong boundary; expected behavior is 0 below zero, preserve values 0-100, and 100 above 100."
+    },
+    {
+      "content_sha256": "45d16bf208426285293d4346e36ce7c534148ac2b27ac50300c8fdb4dca58936",
+      "id": "source-clamp-py",
+      "kind": "source",
+      "location": "C:\\Users\\Administrator.KURO-20211209VQ\\AppData\\Local\\Temp\\codefixer-haiku-smoke-fx9p1shn\\data\\tasks\\task-3f6c04b3bd11bfe7\\runs\\run-329a949100ad428798\\workspaces\\discovery\\src\\clamp.py",
+      "locator": "src/clamp.py:1-2",
+      "revision": "21fea08df5b2e46971b249d041dc7b6517508dfd",
+      "summary": "clamp_percent implemented as `return min(0, max(100, value))`; always evaluates to 0 because max(100, value) >= 100 and min(0, ...) caps at 0, so the clamp boundaries are inverted."
+    },
+    {
+      "content_sha256": "fb06acb8cdee39f44b4fc07735f38b4f7692330763b573e38f62860c28863c93",
+      "id": "source-test-clamp-py",
+      "kind": "source",
+      "location": "C:\\Users\\Administrator.KURO-20211209VQ\\AppData\\Local\\Temp\\codefixer-haiku-smoke-fx9p1shn\\data\\tasks\\task-3f6c04b3bd11bfe7\\runs\\run-329a949100ad428798\\workspaces\\discovery\\tests\\test_clamp.py",
+      "locator": "tests/test_clamp.py:3-6",
+      "revision": "21fea08df5b2e46971b249d041dc7b6517508dfd",
+      "summary": "Tests define expected behavior: clamp_percent(-5)==0, clamp_percent(40)==40, clamp_percent(130)==100, which the current implementation does not satisfy (40 and 130 both return 0)."
+    },
+    {
+      "content_sha256": null,
+      "id": "history-seed-commit",
+      "kind": "history",
+      "location": "C:\\Users\\Administrator.KURO-20211209VQ\\AppData\\Local\\Temp\\codefixer-haiku-smoke-fx9p1shn\\data\\tasks\\task-3f6c04b3bd11bfe7\\runs\\run-329a949100ad428798\\workspaces\\discovery",
+      "locator": "HEAD (21fea08 'seed controlled bug')",
+      "revision": "21fea08df5b2e46971b249d041dc7b6517508dfd",
+      "summary": "Frozen revision 21fea08 adds only src/clamp.py and tests/test_clamp.py; git status shows working tree clean and HEAD matches the source-manifest revision, confirming the frozen source was inspected."
+    }
+  ],
+  "failure": null,
+  "schema_version": 1,
+  "source": {
+    "id": "project-source",
+    "revision": "21fea08df5b2e46971b249d041dc7b6517508dfd"
+  },
+  "summary": "clamp_percent in src/clamp.py returns the wrong boundary. The implementation `return min(0, max(100, value))` always evaluates to 0: for any input, max(100, value) is at least 100, and min(0, ...) then caps the result at 0. The frozen ticket (FAKE-HAIKU-001) and tests/test_clamp.py require 0 for values below 0, preserving values 0-100, and 100 for values above 100. Verified against the frozen source at revision 21fea08: tests assert clamp_percent(-5)==0, clamp_percent(40)==40, clamp_percent(130)==100, so the current implementation fails for the 40 and 130 cases (both return 0). The defect is localized to src/clamp.py::clamp_percent, with tests/test_clamp.py as the behavioral specification."
+}

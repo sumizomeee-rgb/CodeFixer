@@ -49,7 +49,7 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     checks.append(_check("source.executable", executable_ok, f"CLI 可用：{executable}" if executable_ok else f"CLI 不可用：{executable_ref or '未配置'}", "检查 executableBindings 与部署用户 PATH" if not executable_ok else None))
     profiles = {str(item.get("id")): item for item in loaded.config.agentProfiles if item.get("id")}
     agents = project.get("agents") or {}
-    for role in ("discovery", "repair", "review"):
+    for role in ("scopeDiscovery", "discovery", "repair", "review"):
         profile_id = str(agents.get(role, ""))
         raw_profile = profiles.get(profile_id)
         profile_ok = bool(profile_id and raw_profile is not None)

@@ -91,6 +91,7 @@ class RunExecutor:
 
         profiles = {str(item.get("id")): dict(item) for item in loaded.config.agentProfiles if item.get("id")}
         agent_ids = project.get("agents") or {}
+        scope_discovery_agent = build_agent_runtime(profiles[str(agent_ids["scopeDiscovery"])], loaded.config.executableBindings)
         discovery_agent = build_agent_runtime(profiles[str(agent_ids["discovery"])], loaded.config.executableBindings)
         repair_agent = build_agent_runtime(profiles[str(agent_ids["repair"])], loaded.config.executableBindings)
         review_agent = build_agent_runtime(profiles[str(agent_ids["review"])], loaded.config.executableBindings)
@@ -116,6 +117,7 @@ class RunExecutor:
             artifacts=ArtifactStore(loaded.data_root, SchemaRegistry(self.contracts_root)),
             artifact_index=ArtifactIndex(self.connection, loaded.data_root),
             source=source,
+            scope_discovery_agent=scope_discovery_agent,
             discovery_agent=discovery_agent,
             repair_agent=repair_agent,
             review_agent=review_agent,

@@ -24,6 +24,9 @@ button,input,select,textarea{font:inherit}button{cursor:pointer}.ghost.framed{bo
 
 @media(max-width:1100px){.settings-environment,.settings-agents{grid-column:span 7}.settings-mode,.settings-gitlab{grid-column:span 5}.dependency-grid{grid-template-columns:1fr}}
 @media(max-width:820px){.simplified-settings.settings-grid{grid-template-columns:1fr}.settings-environment,.settings-mode,.settings-agents,.settings-gitlab,.settings-secrets{grid-column:1;min-height:0}.dependency-grid{grid-template-columns:1fr}.readiness-summary{align-items:start;flex-direction:column}.agent-presets{grid-template-columns:1fr}}
+.form-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}
+@media(max-width:1050px){.form-grid.four{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:620px){.form-grid.four{grid-template-columns:1fr}}
 
 /* CodeFixer identity: an industrial repair ledger, not an icon-only web launcher. */
 .app-shell{grid-template:72px 1fr/176px minmax(0,1fr)}

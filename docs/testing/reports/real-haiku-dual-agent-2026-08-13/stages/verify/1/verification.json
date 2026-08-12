@@ -1,0 +1,18 @@
+{
+  "candidate_sha256": "0158c6ed839420452080af4a6cb1233452e1e860bf2cd843bfd49112f2be9094",
+  "passed": true,
+  "schema_version": 1,
+  "steps": [
+    {
+      "canceled": false,
+      "duration_seconds": 0.7820000000065193,
+      "exit_code": 0,
+      "id": "pytest",
+      "passed": true,
+      "required": true,
+      "stderr": "",
+      "stdout": ".                                                                        [100%]\r\n1 passed in 0.04s\r\n",
+      "timed_out": false
+    }
+  ]
+}

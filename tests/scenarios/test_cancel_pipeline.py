@@ -20,6 +20,11 @@ from codefixer.protocols import ArtifactStore, SchemaRegistry
 ROOT = Path(__file__).resolve().parents[2]
 def git(cwd:Path,*args:str)->str:return subprocess.run(["git",*args],cwd=cwd,check=True,text=True,capture_output=True).stdout.strip()
 
+class ScopeDiscovery:
+    runtime_name="fake"
+    def __init__(self,revision:str):self.revision=revision
+    def run(self,request):return AgentRunResult(status="succeeded",exit_code=0,session_id="s",structured_output={"schema_version":1,"outcome":"candidates","source":{"id":"project-source","revision":self.revision},"summary":"Likely target.","candidate_scope":["src/app.py"],"search_entry_points":["Search get_value"],"limitations":[],"failure":None})
+
 class Discovery:
     runtime_name="fake"
     def __init__(self,revision:str):self.revision=revision
@@ -40,5 +45,5 @@ def test_cancel_during_repair_never_freezes_or_delivers(tmp_path:Path):
     data=tmp_path/"data";data.mkdir()
     with connect_database(data/"codefixer.db") as connection:
         apply_migrations(connection);tasks=TaskStore(connection);task=tasks.ingest(IngestedTicket("fake","BUG-CANCEL","Cancel me",{"description":"wrong"}),"project-a","automatic");run_id=task["runs"][0]["id"]
-        pipeline=ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/"contracts")),artifact_index=ArtifactIndex(connection,data),source=GitSourceAdapter(repo,["git"]),discovery_agent=Discovery(revision),repair_agent=CancelingRepair(tasks,task["id"]),review_agent=ReviewNeverRuns(),verification_runner=VerificationRunner(),verification_steps=(),project={"id":"project-a","modificationSource":{"id":"project-source","type":"git","repositoryRef":"repo"}},source_policy=SourcePolicy(allowed_roots=("src",),allowed_extensions=(".py",)),delivery=DeliveryCoordinator((PatchFinalAction(action_id="primary-patch",action_version=1,store=DeliveryStore(connection),output_directory=data/"patches"),)))
+        pipeline=ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/"contracts")),artifact_index=ArtifactIndex(connection,data),source=GitSourceAdapter(repo,["git"]),scope_discovery_agent=ScopeDiscovery(revision),discovery_agent=Discovery(revision),repair_agent=CancelingRepair(tasks,task["id"]),review_agent=ReviewNeverRuns(),verification_runner=VerificationRunner(),verification_steps=(),project={"id":"project-a","modificationSource":{"id":"project-source","type":"git","repositoryRef":"repo"}},source_policy=SourcePolicy(allowed_roots=("src",),allowed_extensions=(".py",)),delivery=DeliveryCoordinator((PatchFinalAction(action_id="primary-patch",action_version=1,store=DeliveryStore(connection),output_directory=data/"patches"),)))
         result=pipeline.run(run_id);assert result.status=="canceled";detail=tasks.get_task(task["id"]);assert detail["status"]=="canceled";assert not (data/"patches").exists();assert not (data/"tasks"/task["id"]/"runs"/run_id/"freeze-change").exists();assert git(repo,"status","--porcelain")==""

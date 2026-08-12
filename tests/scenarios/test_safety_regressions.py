@@ -27,6 +27,14 @@ class Discovery:
     runtime_name="fake"
     def __init__(self,revision:str):self.revision=revision
     def run(self,request):return AgentRunResult(status="succeeded",exit_code=0,session_id="discovery",structured_output={"schema_version":1,"decision":"located","source":{"id":"project-source","revision":self.revision},"summary":"Target is src/app.py.","candidate_scope":["src/app.py"],"evidence":[{"id":"ev-source","kind":"source","location":"src/app.py","revision":self.revision,"locator":"get_value","summary":"Current implementation returns the stale value.","content_sha256":None}],"failure":None})
+class ScopeDiscovery:
+    runtime_name="fake"
+    def __init__(self,revision:str):self.revision=revision
+    def run(self,request):return AgentRunResult(status="succeeded",exit_code=0,session_id="scope",structured_output={"schema_version":1,"outcome":"candidates","source":{"id":"project-source","revision":self.revision},"summary":"Likely target.","candidate_scope":["src/app.py"],"search_entry_points":["Search get_value"],"limitations":[],"failure":None})
+class UnresolvedScope:
+    runtime_name="fake"
+    def __init__(self,revision:str):self.revision=revision
+    def run(self,request):return AgentRunResult(status="succeeded",exit_code=0,session_id="scope-unresolved",structured_output={"schema_version":1,"outcome":"unresolved","source":{"id":"project-source","revision":self.revision},"summary":"No reliable source clue.","candidate_scope":[],"search_entry_points":[],"limitations":["Ticket has no symbols or paths."],"failure":{"code":"insufficient_clues","summary":"The ticket cannot be mapped to source.","retryable":False}})
 class RepairSequence:
     runtime_name="fake"
     def __init__(self,*,unauthorized:bool=False):self.calls=0;self.unauthorized=unauthorized
@@ -53,8 +61,8 @@ class LatestTicketProvider:
 class StableSourceView:
     def __init__(self,source:GitSourceAdapter):self.source=source
     def current_revision(self)->str:return self.source.current_revision()
-def build_pipeline(*,tmp_path:Path,tasks:TaskStore,connection,source:GitSourceAdapter,revision:str,repair,review,stability_guard=None)->ChangedPipeline:
-    data=tmp_path/"data";return ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/"contracts")),artifact_index=ArtifactIndex(connection,data),source=source,discovery_agent=Discovery(revision),repair_agent=repair,review_agent=review,verification_runner=VerificationRunner(),verification_steps=(VerificationStep("compile",("python","-m","py_compile","src/app.py")),),project={"id":"project-a","modificationSource":{"id":"project-source","type":"git","repositoryRef":"repo"}},source_policy=SourcePolicy(allowed_roots=("src",),allowed_extensions=(".py",)),delivery=DeliveryCoordinator((PatchFinalAction(action_id="primary-patch",action_version=1,store=DeliveryStore(connection),output_directory=data/"patches"),)),max_repair_attempts=3,stability_guard=stability_guard)
+def build_pipeline(*,tmp_path:Path,tasks:TaskStore,connection,source:GitSourceAdapter,revision:str,repair,review,scope=None,stability_guard=None)->ChangedPipeline:
+    data=tmp_path/"data";return ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/"contracts")),artifact_index=ArtifactIndex(connection,data),source=source,scope_discovery_agent=scope or ScopeDiscovery(revision),discovery_agent=Discovery(revision),repair_agent=repair,review_agent=review,verification_runner=VerificationRunner(),verification_steps=(VerificationStep("compile",("python","-m","py_compile","src/app.py")),),project={"id":"project-a","modificationSource":{"id":"project-source","type":"git","repositoryRef":"repo"}},source_policy=SourcePolicy(allowed_roots=("src",),allowed_extensions=(".py",)),delivery=DeliveryCoordinator((PatchFinalAction(action_id="primary-patch",action_version=1,store=DeliveryStore(connection),output_directory=data/"patches"),)),max_repair_attempts=3,stability_guard=stability_guard)
 def ingest(tasks:TaskStore,ticket:IngestedTicket)->tuple[dict,str]:task=tasks.ingest(ticket,"project-a","automatic");return task,task["runs"][0]["id"]
 def test_review_needs_repair_loops_then_freezes_only_approved_candidate(tmp_path:Path):
     repository,revision=repo(tmp_path);data=tmp_path/"data";data.mkdir()
@@ -68,3 +76,7 @@ def test_ticket_change_after_review_blocks_freeze_and_delivery(tmp_path:Path):
     repository,revision=repo(tmp_path);source=GitSourceAdapter(repository,["git"]);data=tmp_path/"data";data.mkdir();frozen=IngestedTicket("fake","BUG-STALE","Stale",{"description":"original"},"v1",True);latest=IngestedTicket("fake","BUG-STALE","Stale",{"description":"changed while running"},"v2",True);guard=PreDeliveryStabilityGuard(LatestTicketProvider(latest),StableSourceView(source))
     with connect_database(data/"codefixer.db") as connection:
         apply_migrations(connection);tasks=TaskStore(connection);task,run_id=ingest(tasks,frozen);result=build_pipeline(tmp_path=tmp_path,tasks=tasks,connection=connection,source=source,revision=revision,repair=RepairSequence(),review=ReviewSequence(["approved"]),stability_guard=guard).run(run_id);assert result.status=="failed";detail=tasks.get_task(task["id"]);assert detail["failure"]["code"]=="ticket_changed_during_run";assert not (data/"patches").exists();assert not (data/"tasks"/task["id"]/"runs"/run_id/"freeze-change").exists();assert git(repository,"status","--porcelain")==""
+def test_unresolved_scope_marks_stage_and_task_failed_with_reason(tmp_path:Path):
+    repository,revision=repo(tmp_path);data=tmp_path/"data";data.mkdir()
+    with connect_database(data/"codefixer.db") as connection:
+        apply_migrations(connection);tasks=TaskStore(connection);task,run_id=ingest(tasks,IngestedTicket("fake","BUG-NO-SCOPE","Unknown",{"description":"no source clues"},"v1",True));result=build_pipeline(tmp_path=tmp_path,tasks=tasks,connection=connection,source=GitSourceAdapter(repository,["git"]),revision=revision,repair=NeverReview(),review=NeverReview(),scope=UnresolvedScope(revision)).run(run_id);assert result.status=="failed";detail=tasks.get_task(task["id"]);assert detail["failure"]["code"]=="scope_discovery_failed";scope_stage=next(stage for stage in detail["runs"][0]["stages"] if stage["stage_id"]=="scope_discovery");assert scope_stage["status"]=="failed";assert scope_stage["failure"]["summary"]=="The ticket cannot be mapped to source."

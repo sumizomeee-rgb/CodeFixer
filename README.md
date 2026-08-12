@@ -32,7 +32,7 @@ CodeFixer 的第一版施工以以下规范共同作为基准：
 
 - FastAPI + SQLite WAL + migrations。
 - Redmine / TAPD 增量收单与长期 Task 身份。
-- Discovery / Repair / Review 独立 Agent Runtime。
+- Scope Discovery / Formal Discovery / Repair / Review 独立 Agent 会话；前两阶段通过固定路径调查文档交接。
 - Claude Code / Codex / OpenCode 独立 CLI Adapter。
 - Git 独立 worktree；SVN lease + 清理策略。
 - 平台真实 diff、越权路径检查、验证命令与验证污染隔离。

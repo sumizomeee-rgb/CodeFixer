@@ -43,6 +43,14 @@ def test_claude_uses_print_json_schema_and_stage_permission(tmp_path: Path):
     assert "bypassPermissions" not in command; assert "--json-schema" in command; assert result.structured_output=={"ok":True}; assert result.session_id=="c1"
 
 
+def test_claude_translates_draft_2020_schema_metadata(tmp_path: Path):
+    cwd, entry, schema = fixture_files(tmp_path)
+    schema.write_text(json.dumps({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","$defs":{"answer":{"type":"boolean"}},"properties":{"ok":{"$ref":"#/$defs/answer"}}}),encoding="utf-8")
+    runner=FakeRunner(ProcessResult(0,json.dumps({"structured_output":{"ok":True}}),"",False,.2));runtime=build_agent_runtime({"id":"discover","runtime":"claudeCode","executableRef":"claude"},{"claude":{"command":["claude"]}},runner=runner)
+    runtime.run(AgentRequest(stage="discovery",entry_file=entry,cwd=cwd,access="read_only",output_schema=schema));command=runner.calls[0]["command"]
+    assert isinstance(command,list);translated=json.loads(command[command.index("--json-schema")+1]);assert "$schema" not in translated;assert "definitions" in translated;assert translated["properties"]["ok"]["$ref"]=="#/definitions/answer"
+
+
 def test_claude_repair_allows_file_edits_but_not_unrestricted_shell(tmp_path: Path):
     runner=FakeRunner(ProcessResult(0,json.dumps({"structured_output":{"ok":True}}),"",False,.2));runtime=build_agent_runtime({"id":"repair","runtime":"claudeCode","executableRef":"claude"},{"claude":{"command":["claude"]}},runner=runner)
     runtime.run(request(tmp_path,"workspace_write"));command=runner.calls[0]["command"];assert isinstance(command,list);assert command[command.index("--tools")+1]=="Read,Glob,Grep,Bash,Edit,Write";allowed=command[command.index("--allowedTools")+1:];assert "Edit" in allowed and "Write" in allowed and "Bash" not in allowed
@@ -69,7 +77,7 @@ def test_codex_stage_schemas_use_supported_strict_subset():
             for child in value:
                 inspect(child)
 
-    for name in ("task-discovery", "repair-result", "review", "no-change-report"):
+    for name in ("scope-discovery", "task-discovery", "repair-result", "review", "no-change-report"):
         inspect(json.loads((artifact_root / f"{name}.schema.json").read_text(encoding="utf-8")))
 
 

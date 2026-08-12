@@ -30,7 +30,16 @@ class DiscoveryAgent:
     runtime_name = "fake"
     def __init__(self, revision: str): self.revision = revision
     def run(self, request):
+        scope_path = next(path for label, path in _entry_paths(request.entry_file) if label == "Untrusted scope investigation notes")
+        assert scope_path.name == "scope-discovery.md" and "untrusted navigation hints" in scope_path.read_text(encoding="utf-8")
         return AgentRunResult(status="succeeded", exit_code=0, session_id="d1", structured_output={"schema_version":1,"decision":"located","source":{"id":"project-source","revision":self.revision},"summary":"The stale value is returned from src/app.py.","candidate_scope":["src/app.py"],"evidence":[{"id":"ev-1","kind":"source","location":"src/app.py","revision":self.revision,"locator":"get_value","summary":"Returns stale value.","content_sha256":None}],"failure":None})
+
+
+class ScopeDiscoveryAgent:
+    runtime_name = "fake"
+    def __init__(self, revision: str): self.revision = revision
+    def run(self, request):
+        return AgentRunResult(status="succeeded", exit_code=0, session_id="s1", structured_output={"schema_version":1,"outcome":"candidates","source":{"id":"project-source","revision":self.revision},"summary":"Likely value implementation.","candidate_scope":["src/app.py"],"search_entry_points":["Search get_value in src/app.py"],"limitations":[],"failure":None})
 
 
 class RepairAgent:
@@ -62,8 +71,9 @@ def test_normal_changed_patch_journey(tmp_path: Path):
     data=tmp_path/"data";data.mkdir();db=data/"codefixer.db"
     with connect_database(db) as connection:
         apply_migrations(connection);tasks=TaskStore(connection);task=tasks.ingest(IngestedTicket("fake","BUG-1","Wrong value",{"description":"get_value returns 1"}),"project-a","automatic");run_id=task["runs"][0]["id"]
-        pipeline=ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/"contracts")),artifact_index=ArtifactIndex(connection,data),source=GitSourceAdapter(repo,["git"]),discovery_agent=DiscoveryAgent(revision),repair_agent=RepairAgent(),review_agent=ReviewAgent(),verification_runner=VerificationRunner(),verification_steps=(VerificationStep("compile",("python","-m","py_compile","src/app.py")),),project={"id":"project-a","modificationSource":{"id":"project-source","type":"git","repositoryRef":"repo"}},source_policy=SourcePolicy(allowed_roots=("src",),allowed_extensions=(".py",)),delivery=DeliveryCoordinator((PatchFinalAction(action_id="primary-patch",action_version=1,store=DeliveryStore(connection),output_directory=data/"patches"),)))
+        pipeline=ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/"contracts")),artifact_index=ArtifactIndex(connection,data),source=GitSourceAdapter(repo,["git"]),scope_discovery_agent=ScopeDiscoveryAgent(revision),discovery_agent=DiscoveryAgent(revision),repair_agent=RepairAgent(),review_agent=ReviewAgent(),verification_runner=VerificationRunner(),verification_steps=(VerificationStep("compile",("python","-m","py_compile","src/app.py")),),project={"id":"project-a","modificationSource":{"id":"project-source","type":"git","repositoryRef":"repo"}},source_policy=SourcePolicy(allowed_roots=("src",),allowed_extensions=(".py",)),delivery=DeliveryCoordinator((PatchFinalAction(action_id="primary-patch",action_version=1,store=DeliveryStore(connection),output_directory=data/"patches"),)))
         result=pipeline.run(run_id);assert result.status=="completed" and result.result=="changed";assert result.deliveries and result.deliveries[0].succeeded
         detail=tasks.get_task(task["id"]);assert detail["status"]=="completed" and detail["result"]=="changed";assert len(list((data/"patches").glob("*.patch")))==1
+        scope_root=data/"tasks"/task["id"]/"runs"/run_id/"stages/scope_discovery";discovery_root=data/"tasks"/task["id"]/"runs"/run_id/"stages/discovery";scope_doc=scope_root/"scope-discovery.md";discovery_entry=(discovery_root/"entry.md").read_text(encoding="utf-8");assert scope_doc.is_file() and str(scope_doc.resolve()) in discovery_entry;assert "Likely value implementation" not in discovery_entry;assert json.loads((scope_root/"agent-runtime.json").read_text())["session_id"]=="s1";assert json.loads((discovery_root/"agent-runtime.json").read_text())["session_id"]=="d1"
         manifest_path=data/"tasks"/task["id"]/"runs"/run_id/"freeze-change/change-manifest.json";manifest=json.loads(manifest_path.read_text());assert manifest["modification_source"]["base_revision"]==revision;assert manifest["files"][0]["path"]=="src/app.py"
         frozen_file=manifest_path.parent/"files/src/app.py";assert frozen_file.read_text(encoding="utf-8")=="def get_value():\n    return 2\n";assert hashlib.sha256(frozen_file.read_bytes()).hexdigest()==manifest["files"][0]["content_sha256"];assert git(repo,"status","--porcelain")==""

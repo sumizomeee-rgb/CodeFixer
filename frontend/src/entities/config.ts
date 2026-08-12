@@ -29,7 +29,7 @@ export type AppConfig = {
 export type ProjectConfig = {
   id:string; name?:string; enabled?:boolean; routingRules?:RoutingRule[]
   modificationSource?:{id?:string;type?:'git'|'svn';repositoryRef?:string;executableRef?:string;allowedRoots?:string[];deniedRoots?:string[];allowedExtensions?:string[]}
-  agents?:{discovery?:string;repair?:string;review?:string}
+  agents?:{scopeDiscovery?:string;discovery?:string;repair?:string;review?:string}
   verification?:{timeoutSeconds?:number;steps?:VerificationStepConfig[];allowNoAutomatedTests?:boolean;reason?:string}
   finalActions?:FinalActionConfig[]
 }

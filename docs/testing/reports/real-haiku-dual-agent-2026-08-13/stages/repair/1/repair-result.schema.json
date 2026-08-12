@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeFixer repair result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "outcome", "summary", "changed_paths_claimed", "checks_requested", "limitations"],
+  "properties": {
+    "schema_version": {"type": "integer", "const": 1},
+    "outcome": {"type": "string", "enum": ["changed", "no_valid_diff", "blocked"]},
+    "summary": {"type": "string", "minLength": 1},
+    "changed_paths_claimed": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "checks_requested": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -35,7 +35,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert changed.status_code == 200
         assert changed.json()["mode"] == "automatic"
         etag = changed.json()["etag"]
-        project = {"id": "demo", "name": "Demo", "modificationSource": {"type": "git", "repositoryRef": "repo", "executableRef": "git-cli"}, "agents": {"discovery": "agent-default", "repair": "agent-default", "review": "agent-default"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectoryRef": "patches"}]}
+        project = {"id": "demo", "name": "Demo", "modificationSource": {"type": "git", "repositoryRef": "repo", "executableRef": "git-cli"}, "agents": {"scopeDiscovery": "agent-default", "discovery": "agent-default", "repair": "agent-default", "review": "agent-default"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectoryRef": "patches"}]}
         created = client.post("/api/projects", json=project, headers={"If-Match": etag})
         assert created.status_code == 201
         assert client.get("/api/projects").json()["items"][0]["id"] == "demo"

@@ -4,11 +4,11 @@ import type { DeliveryAction, StageRun, TaskRecord, TaskRun } from '../entities/
 import { api } from '../lib/api'
 
 const labels:Record<string,string>={awaiting_start:'待开始',queued:'等待中',running:'处理中',cancel_requested:'正在取消',completed:'已完成',failed:'失败',canceled:'已取消'}
-const stageLabel:Record<string,string>={prepare:'准备',discovery:'分析',no_change_verify:'确认',repair:'修复',verify:'验证',review:'复核',pre_delivery_check:'检查',freeze_change:'冻结',deliver:'交付'}
+const stageLabel:Record<string,string>={prepare:'准备',scope_discovery:'范围',discovery:'定位',no_change_verify:'确认',repair:'修复',verify:'验证',review:'复核',pre_delivery_check:'检查',freeze_change:'冻结',deliver:'交付'}
 const state=(value:string):StageState=>value==='completed'?'done':value==='running'?'running':value==='failed'?'failed':value==='reconciling'?'reconciling':value==='canceled'?'skipped':'queued'
 const resultLabel=(value:string|null|undefined)=>value==='no_change'?'无需修改':value==='changed'?'已修复':'—'
 function meta(stage:StageRun){if(stage.started_at&&stage.finished_at){const ms=new Date(stage.finished_at).getTime()-new Date(stage.started_at).getTime();return ms<1000?'完成':`${Math.max(1,Math.round(ms/1000))} 秒`}return stage.status==='running'?'进行中':''}
-function stageRail(run:TaskRun):StageItem[]{const order=['prepare','discovery','repair','verify','review','deliver'];const latest=new Map<string,StageRun>();for(const item of run.stages??[])latest.set(item.stage_id,item);return order.map(id=>{const item=latest.get(id);return{label:stageLabel[id]??id,meta:item?meta(item):'',state:item?state(item.status):'queued'}})}
+function stageRail(run:TaskRun):StageItem[]{const order=['prepare','scope_discovery','discovery','repair','verify','review','deliver'];const latest=new Map<string,StageRun>();for(const item of run.stages??[])latest.set(item.stage_id,item);return order.map(id=>{const item=latest.get(id);return{label:stageLabel[id]??id,meta:item?meta(item):'',state:item?state(item.status):'queued'}})}
 const deliveryStatus=(value:string)=>value==='completed'||value==='success'?'已完成':value==='failed'?'失败':value==='partial_success'?'部分完成':value==='running'?'处理中':value==='queued'?'等待中':value
 const deliveryType=(value:string)=>value==='patch'?'补丁':value==='gitlabMr'?'GitLab 合并请求':value
 function Delivery({action}:{action:DeliveryAction}){return <div className={`delivery-card delivery-${action.status}`}><div><b>{deliveryType(action.action_type)}</b></div><span className="delivery-status">{deliveryStatus(action.status)}</span>{action.targets?.map(t=><div className="delivery-target" key={t.id}><span>{t.target_key}</span><span>{deliveryStatus(t.status)}</span>{t.external_url?<a href={t.external_url} target="_blank" rel="noreferrer">打开</a>:null}</div>)}</div>}

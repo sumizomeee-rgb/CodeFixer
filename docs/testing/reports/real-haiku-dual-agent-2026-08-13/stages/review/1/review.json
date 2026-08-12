@@ -1,0 +1,8 @@
+{
+  "input_sha256": "0158c6ed839420452080af4a6cb1233452e1e860bf2cd843bfd49112f2be9094",
+  "issues": [],
+  "mode": "change",
+  "schema_version": 1,
+  "summary": "Approved. The candidate patch fixes clamp_percent in src/clamp.py by replacing the inverted clamp `min(0, max(100, value))` (which always returned 0) with the correct `min(100, max(0, value))`. This satisfies the ticket FAKE-HAIKU-001 and the tests: clamp_percent(-5)==0, clamp_percent(40)==40, clamp_percent(130)==100. Verification passed (pytest, exit code 0), and the repair workspace staged diff matches the candidate patch.",
+  "verdict": "approved"
+}

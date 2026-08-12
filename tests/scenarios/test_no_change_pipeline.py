@@ -22,6 +22,11 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def git(cwd: Path, *args: str) -> str: return subprocess.run(["git",*args],cwd=cwd,check=True,text=True,capture_output=True).stdout.strip()
 
+class ScopeDiscovery:
+    runtime_name="fake"
+    def __init__(self,revision:str):self.revision=revision
+    def run(self,request):return AgentRunResult(status="succeeded",exit_code=0,session_id="s",structured_output={"schema_version":1,"outcome":"candidates","source":{"id":"project-source","revision":self.revision},"summary":"Inspect the current value and history.","candidate_scope":["src/app.py"],"search_entry_points":["Read get_value and git history"],"limitations":[],"failure":None})
+
 class DiscoveryNoChange:
     runtime_name="fake"
     def __init__(self,revision:str):self.revision=revision
@@ -46,5 +51,5 @@ def test_no_change_is_a_healthy_reviewed_terminal_result(tmp_path:Path):
     data=tmp_path/'data';data.mkdir()
     with connect_database(data/'codefixer.db') as connection:
         apply_migrations(connection);tasks=TaskStore(connection);task=tasks.ingest(IngestedTicket('fake','BUG-2','Old report',{'description':'returns 1'}),'project-a','automatic');run_id=task['runs'][0]['id']
-        pipeline=ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/'contracts')),artifact_index=ArtifactIndex(connection,data),source=GitSourceAdapter(repo,['git']),discovery_agent=DiscoveryNoChange(revision),repair_agent=NoChangeVerifier(revision),review_agent=NoChangeReview(),verification_runner=VerificationRunner(),verification_steps=(),project={'id':'project-a','modificationSource':{'id':'project-source','type':'git','repositoryRef':'repo'}},source_policy=SourcePolicy(allowed_roots=('src',)),delivery=DeliveryCoordinator((PatchFinalAction(action_id='primary-patch',action_version=1,store=DeliveryStore(connection),output_directory=data/'patches'),)))
+        pipeline=ChangedPipeline(tasks=tasks,artifacts=ArtifactStore(data,SchemaRegistry(ROOT/'contracts')),artifact_index=ArtifactIndex(connection,data),source=GitSourceAdapter(repo,['git']),scope_discovery_agent=ScopeDiscovery(revision),discovery_agent=DiscoveryNoChange(revision),repair_agent=NoChangeVerifier(revision),review_agent=NoChangeReview(),verification_runner=VerificationRunner(),verification_steps=(),project={'id':'project-a','modificationSource':{'id':'project-source','type':'git','repositoryRef':'repo'}},source_policy=SourcePolicy(allowed_roots=('src',)),delivery=DeliveryCoordinator((PatchFinalAction(action_id='primary-patch',action_version=1,store=DeliveryStore(connection),output_directory=data/'patches'),)))
         result=pipeline.run(run_id);assert result.status=='completed' and result.result=='no_change';assert not (data/'patches').exists();detail=tasks.get_task(task['id']);assert detail['status']=='completed' and detail['result']=='no_change';assert git(repo,'status','--porcelain')==''

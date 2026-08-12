@@ -1,0 +1,22 @@
+{
+  "task_id": "task-3f6c04b3bd11bfe7",
+  "run_id": "run-329a949100ad428798",
+  "status": "completed",
+  "result": "changed",
+  "failure": null,
+  "source_revision": "21fea08df5b2e46971b249d041dc7b6517508dfd",
+  "sessions": {
+    "scope_discovery": "5b7fb08a-1222-46c5-ad45-d4f71cfadac8",
+    "discovery": "7ff4056c-3fd0-4367-8eea-f82da81d9f00",
+    "repair": "66b3be9e-8869-4f94-896e-74f2e5d918da",
+    "review": "ab0c45a4-add2-4df2-80ac-b1a71c46ae98"
+  },
+  "durations_seconds": {
+    "scope_discovery": 34.296999999991385,
+    "discovery": 140.34400000001187,
+    "repair": 47.95299999997951,
+    "review": 33.280999999988126
+  },
+  "patch_count": 1,
+  "original_repo_status": ""
+}

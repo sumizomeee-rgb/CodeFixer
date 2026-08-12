@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import os
+import re
+import shutil
 import signal
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Mapping, Protocol
+from typing import Protocol
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,39 @@ class ProcessRunner(Protocol):
 
 
 class SubprocessRunner:
+    @staticmethod
+    def _native_cmd_proxy(shim: Path) -> Path | None:
+        """Resolve simple npm-style CMD shims that forward directly to an exe."""
+        try:
+            content = shim.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return None
+        pattern = re.compile(r'^\s*"(?P<target>[^"]+\.exe)"\s+%\*\s*$', re.MULTILINE | re.IGNORECASE)
+        match = pattern.search(content)
+        if match is None:
+            return None
+        expanded = re.sub(
+            r"%dp0%",
+            lambda _: str(shim.parent),
+            match.group("target"),
+            flags=re.IGNORECASE,
+        )
+        target = Path(expanded)
+        return target if target.is_file() else None
+
+    @staticmethod
+    def _prepare_command(command: list[str], process_env: Mapping[str, str]) -> list[str]:
+        if not command:
+            raise ValueError("process command is empty")
+        resolved = shutil.which(command[0], path=process_env.get("PATH")) or command[0]
+        if os.name == "nt" and Path(resolved).suffix.lower() in {".cmd", ".bat"}:
+            native_proxy = SubprocessRunner._native_cmd_proxy(Path(resolved))
+            if native_proxy is not None:
+                resolved = str(native_proxy)
+        # CreateProcess can launch a resolved .cmd/.bat shim directly. Agent CLIs
+        # with a native proxy bypass the batch layer so JSON arguments stay exact.
+        return [resolved, *command[1:]]
+
     def run(
         self,
         command: list[str],
@@ -71,7 +106,7 @@ class SubprocessRunner:
         else:
             kwargs["start_new_session"] = True
         process = subprocess.Popen(
-            command,
+            self._prepare_command(command, process_env),
             cwd=cwd,
             stdin=subprocess.PIPE if stdin_text is not None else None,
             stdout=subprocess.PIPE,

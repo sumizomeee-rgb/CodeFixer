@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Mapping
+from collections.abc import Mapping
 
 from codefixer.adapters.agents.base import BaseCliAgentRuntime, first_string, load_schema, numeric, stage_prompt
 from codefixer.application.ports.agents import AgentRequest, AgentRunResult
@@ -11,6 +11,24 @@ _READ_ONLY_TOOLS = "Read,Glob,Grep,Bash"
 _WRITE_TOOLS = "Read,Glob,Grep,Bash,Edit,Write"
 _READ_ONLY_ALLOWED = ("Read", "Glob", "Grep")
 _WRITE_ALLOWED = ("Read", "Glob", "Grep", "Edit", "Write")
+
+
+def _claude_compatible_schema(value: object) -> object:
+    """Translate repository Draft 2020-12 metadata to Claude CLI's validator subset."""
+    if isinstance(value, list):
+        return [_claude_compatible_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result: dict[str, object] = {}
+    for key, child in value.items():
+        if key == "$schema":
+            continue
+        normalized_key = "definitions" if key == "$defs" else key
+        normalized_child = _claude_compatible_schema(child)
+        if normalized_key == "$ref" and isinstance(normalized_child, str):
+            normalized_child = normalized_child.replace("#/$defs/", "#/definitions/")
+        result[normalized_key] = normalized_child
+    return result
 
 
 class ClaudeCodeRuntime(BaseCliAgentRuntime):
@@ -43,7 +61,8 @@ class ClaudeCodeRuntime(BaseCliAgentRuntime):
             command.extend(["--max-budget-usd", str(self.profile.max_budget_usd)])
         schema = load_schema(request.output_schema)
         if schema is not None:
-            command.extend(["--json-schema", json.dumps(schema, separators=(",", ":"))])
+            compatible_schema = _claude_compatible_schema(schema)
+            command.extend(["--json-schema", json.dumps(compatible_schema, separators=(",", ":"))])
         command.extend(self.profile.extra_args)
         return command, None, None
 

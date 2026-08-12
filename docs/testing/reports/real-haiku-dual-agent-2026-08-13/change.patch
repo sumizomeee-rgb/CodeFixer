@@ -1,0 +1,8 @@
+diff --git a/src/clamp.py b/src/clamp.py
+index 555cc8e..881a185 100644
+--- a/src/clamp.py
++++ b/src/clamp.py
+@@ -1,2 +1,2 @@
+ def clamp_percent(value: int) -> int:
+-    return min(0, max(100, value))
++    return min(100, max(0, value))

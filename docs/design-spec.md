@@ -298,6 +298,8 @@ ingest
 
 两个会话可以使用相同或不同的 Agent profile，但必须分别启动、分别记录模型用量和失败原因。第一阶段产物是不可信的调查笔记，不是代码事实、正式证据或对第二阶段的指令；第二阶段不能仅凭笔记下结论。
 
+项目配置中的角色键固定为 `agents.scopeDiscovery`、`agents.discovery`、`agents.repair`、`agents.review`，四项都必须显式配置。平台不为缺失的 `scopeDiscovery` 回退复用旧配置；同一 profile 的复用必须由项目配置明确表达。
+
 平台不得把第一阶段正文拼进第二阶段 Prompt。第二阶段入口文档只写范围调查产物的绝对路径及其信任边界，Runtime 仍只收到入口文档绝对路径和最小启动指令。范围调查失败时任务以 `scope_discovery_failed` 结束；正式定位无法反查时以 `discovery_unresolved` 结束，界面展示阶段、原因、已核实线索和建议动作。
 
 正式 Discovery 职责：

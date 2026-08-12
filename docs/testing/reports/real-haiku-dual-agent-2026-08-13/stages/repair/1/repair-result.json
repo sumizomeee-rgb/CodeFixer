@@ -1,0 +1,15 @@
+{
+  "changed_paths_claimed": [
+    "src/clamp.py"
+  ],
+  "checks_requested": [
+    "python -m pytest tests/test_clamp.py -q",
+    "python -c \"from src.clamp import clamp_percent; assert clamp_percent(-5)==0; assert clamp_percent(40)==40; assert clamp_percent(130)==100\""
+  ],
+  "limitations": [
+    "Bash execution (pytest/python) was denied in this environment, so the fix was verified by inspection rather than by executing the test suite."
+  ],
+  "outcome": "changed",
+  "schema_version": 1,
+  "summary": "Fixed clamp_percent in src/clamp.py. The implementation was `return min(0, max(100, value))`, which always evaluates to 0 because max(100, value) is at least 100 and min(0, ...) caps the result at 0. Replaced it with `return min(100, max(0, value))`, which correctly returns 0 for values below 0, preserves values in [0, 100], and returns 100 for values above 100. This satisfies the ticket (FAKE-HAIKU-001) and the assertions in tests/test_clamp.py: clamp_percent(-5)==0, clamp_percent(40)==40, clamp_percent(130)==100."
+}
