@@ -133,4 +133,3 @@ def inspect_executable_dependencies(loaded: LoadedConfig) -> list[dict[str, Any]
             base.update(status="ready", summary=f"{binding_id} {version} 可用")
         checks.append(base)
     return checks
-
