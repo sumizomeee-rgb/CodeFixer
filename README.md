@@ -81,6 +81,10 @@ CodeFixer 不依赖 GitHub Actions、PR 或特定托管平台作为开发门禁�
 
 ### 启动
 
+Windows 日常启动直接双击仓库根目录的 `start.bat`。它会先识别并强制结束当前仓库已经运行的 CodeFixer 进程树，再重新构建前端并启动服务。
+
+也可以手工运行：
+
 ```powershell
 .\scripts\run.ps1 --build
 ```
