@@ -1,3 +1,4 @@
 #!/usr/bin/env bash
 set -euo pipefail
-curl -fsS http://127.0.0.1:9522/api/readiness
+cd "$(dirname "$0")/.."
+exec python scripts/readiness.py "$@"
