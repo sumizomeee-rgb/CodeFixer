@@ -6,6 +6,5 @@ export function ModeController({ mode, pending, onClick }: { mode: ExecutionMode
     <span className="mode-dot" />
     <span>{automatic ? '全自动' : '待我开始'}</span>
     {pending ? <em>{pending}</em> : null}
-    <kbd>⌘⇧A</kbd>
   </button>
 }
