@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeFixer discovery gate",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "decision", "missing_signals", "supplement_attempted", "failure"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "decision": {"enum": ["pass", "supplement", "fail"]},
+    "missing_signals": {"type": "array", "items": {"type": "string"}},
+    "supplement_attempted": {"type": "boolean"},
+    "failure": {"type": ["object", "null"]}
+  }
+}
