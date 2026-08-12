@@ -1,0 +1,33 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import argparse
+import os
+import shutil
+import subprocess
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+VENV_PY = ROOT / "backend" / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Run CodeFixer from project-local dependencies")
+    parser.add_argument("--build", action="store_true", help="build frontend before starting")
+    args = parser.parse_args()
+    if not VENV_PY.exists():
+        raise SystemExit("backend/.venv is missing. Run: python scripts/bootstrap.py")
+    npm = shutil.which("npm.cmd" if os.name == "nt" else "npm") or shutil.which("npm")
+    if args.build:
+        if npm is None:
+            raise SystemExit("npm not found")
+        subprocess.run([npm, "run", "build"], cwd=ROOT / "frontend", check=True)
+    if not (ROOT / "frontend" / "dist" / "index.html").is_file():
+        raise SystemExit("frontend/dist is missing. Run with --build or: cd frontend && npm run build")
+    env = os.environ.copy()
+    env["CODEFIXER_FRONTEND_DIST"] = str(ROOT / "frontend" / "dist")
+    return subprocess.call([str(VENV_PY), "-m", "codefixer"], cwd=ROOT, env=env)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
