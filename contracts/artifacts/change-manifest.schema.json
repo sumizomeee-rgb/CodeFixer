@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeFixer frozen change manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "change_version", "modification_source", "diff", "files", "source_commits", "verification_sha256", "review_sha256", "config_sha256"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "change_version": {"type": "integer", "minimum": 1},
+    "modification_source": {"type": "object", "additionalProperties": false, "required": ["id", "base_revision"], "properties": {"id": {"type": "string", "minLength": 1}, "base_revision": {"type": "string", "minLength": 1}}},
+    "diff": {"type": "object", "additionalProperties": false, "required": ["path", "sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "files": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": false, "required": ["path", "operation", "content_sha256"], "properties": {"path": {"type": "string", "minLength": 1}, "operation": {"enum": ["add", "modify", "delete", "rename"]}, "content_sha256": {"type": ["string", "null"]}}}},
+    "source_commits": {"type": "array", "items": {"type": "string"}},
+    "verification_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "review_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "config_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+  }
+}
