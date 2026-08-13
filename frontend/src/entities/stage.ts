@@ -2,7 +2,7 @@ import type { StageItem, StageState } from '../design-system/StageRail'
 import type { StageRun, TaskRun } from './task'
 
 /** 12 个真实阶段的中文名。完整 12 项供抽屉的原始阶段表使用。 */
-export const STAGE_LABELS:Record<string,string>={prepare:'准备',scope_discovery:'范围',discovery:'定位',assess:'评估',workspace_prepare:'工作区',no_change_verify:'确认',repair:'修复',verify:'验证',review:'复核',pre_delivery_check:'检查',freeze_change:'冻结',deliver:'交付'}
+export const STAGE_LABELS:Record<string,string>={prepare:'准备',scope_discovery:'初步定位',discovery:'确认位置',assess:'判断可行性',workspace_prepare:'准备工程',no_change_verify:'确认',repair:'修改',verify:'检查',review:'复核',pre_delivery_check:'交付检查',freeze_change:'保存结果',deliver:'交付'}
 /** 主轨顺序：刻意压缩为 8 个业务阶段。workspace_prepare / pre_delivery_check / freeze_change 等内部状态只进原始阶段表，不上主轨。 */
 const RAIL_ORDER=['prepare','scope_discovery','discovery','assess','repair','verify','review','deliver']
 

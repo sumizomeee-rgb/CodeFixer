@@ -3,10 +3,10 @@ export type StageItem = { label: string; meta: string; state: StageState }
 
 const defaultStages: StageItem[] = [
   { label: '准备', meta: '完成', state: 'done' },
-  { label: '范围', meta: '18 秒', state: 'done' },
+  { label: '初步定位', meta: '18 秒', state: 'done' },
   { label: '定位', meta: '42 秒', state: 'done' },
   { label: '修复', meta: '进行中', state: 'running' },
-  { label: '验证', meta: '', state: 'queued' },
+  { label: '检查', meta: '', state: 'queued' },
   { label: '复核', meta: '', state: 'queued' },
   { label: '交付', meta: '', state: 'queued' },
 ]

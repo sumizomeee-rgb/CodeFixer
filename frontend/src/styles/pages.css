@@ -303,6 +303,8 @@
 .no-action-selected { padding: 18px; color: var(--tertiary); font-size: 11px; text-align: center; }
 .project-policy { margin-top: 30px; border-top: 1px solid var(--line-strong); }
 .project-policy > summary { padding: 17px 3px; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.project-policy > summary span { margin-right: 10px; color: var(--text); }
+.project-policy > summary small { color: var(--tertiary); font-size: 10px; font-weight: 400; }
 .policy-body { padding-top: 4px; }
 .policy-body h4 { margin: 22px 0 12px; }
 .advanced-heading { display: flex; align-items: center; justify-content: space-between; }

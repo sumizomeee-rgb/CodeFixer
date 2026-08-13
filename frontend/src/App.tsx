@@ -91,7 +91,7 @@ export default function App() {
       <ModeController mode={mode} onClick={() => setConfirmMode(true)}/>
       <div className="top-actions"><button className="icon-btn" aria-label="切换主题" title={theme === 'dark' ? '切换到浅色' : '切换到深色'} onClick={toggleTheme}><Icon name={theme === 'dark' ? 'sun' : 'moon'}/></button></div>
     </header>
-    <aside className="navrail" aria-label="主导航"><div className="nav-main">{nav('tasks','任务')}{nav('projects','流水线')}{nav('sources','来源')}{nav('settings','设置')}</div><div className={`nav-health health-${readiness??'checking'}`}><span className="nav-heartbeat"/><div><b>{readiness===null?'正在检查':readiness==='ready'?'系统待命':readiness==='warning'?'有建议项':'存在阻断'}</b><small>{readiness==='ready'?'依赖与运行环境正常':'打开设置查看运行环境'}</small></div></div></aside>
+    <aside className="navrail" aria-label="主导航"><div className="nav-main">{nav('tasks','任务')}{nav('projects','流水线')}{nav('sources','反馈源')}{nav('settings','设置')}</div><div className={`nav-health health-${readiness??'checking'}`}><span className="nav-heartbeat"/><div><b>{readiness===null?'正在检查':readiness==='ready'?'系统待命':readiness==='warning'?'有建议项':'存在阻断'}</b><small>{readiness==='ready'?'依赖与运行环境正常':'打开设置查看运行环境'}</small></div></div></aside>
     <main>
       {page === 'tasks' ? <TasksPage onNavigate={navigate}/> :
        page === 'projects' ? <ProjectsPage/> :
