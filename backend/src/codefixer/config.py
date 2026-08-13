@@ -62,6 +62,16 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
     return result
 
 
+def _normalize_legacy_fields(value: dict[str, Any]) -> dict[str, Any]:
+    result = deepcopy(value)
+    execution = result.get("execution")
+    if isinstance(execution, dict) and "agentProfileId" in execution:
+        normalized = dict(execution)
+        normalized["currentModelId"] = normalized.pop("agentProfileId")
+        result["execution"] = normalized
+    return result
+
+
 def _read_json(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
@@ -81,6 +91,7 @@ def load_config(base_config_path: Path | None = None) -> LoadedConfig:
     local_path = Path(local_path_raw).resolve() if local_path_raw else (repo_root / "config/local.json").resolve()
     if local_path.exists():
         merged = _deep_merge(merged, _read_json(local_path))
+    merged = _normalize_legacy_fields(merged)
     secret_path_raw = os.environ.get("CODEFIXER_SECRET_CONFIG")
     secret_path = Path(secret_path_raw).resolve() if secret_path_raw else (repo_root / "config/secrets.json").resolve()
     config = AppConfig.model_validate(merged)
