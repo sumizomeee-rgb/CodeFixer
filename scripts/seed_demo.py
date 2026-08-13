@@ -43,6 +43,8 @@ def main() -> int:
             ("prepare", "completed"),
             ("scope_discovery", "completed"),
             ("discovery", "completed"),
+            ("workspace_prepare", "completed"),
+            ("assess", "completed"),
             ("repair", "running"),
         ):
             sid = store.start_stage(running_run, stage, 1)
@@ -56,6 +58,7 @@ def main() -> int:
             "prepare",
             "scope_discovery",
             "discovery",
+            "workspace_prepare",
             "no_change_verify",
             "review",
             "pre_delivery_check",

@@ -14,6 +14,7 @@ from codefixer.api.secrets import router as secrets_router
 from codefixer.api.settings import router as settings_router
 from codefixer.api.system import router as system_router
 from codefixer.api.tasks import router as tasks_router
+from codefixer.api.workspaces import router as workspaces_router
 from codefixer.config import LoadedConfig, load_config
 from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.database import initialize_database
@@ -52,6 +53,7 @@ def create_app(loaded_config: LoadedConfig | None = None, *, start_background: b
     app.include_router(providers_router)
     app.include_router(secrets_router)
     app.include_router(tasks_router)
+    app.include_router(workspaces_router)
 
     assets = loaded.frontend_dist / "assets"
     if assets.is_dir():

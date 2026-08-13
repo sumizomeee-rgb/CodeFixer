@@ -577,15 +577,15 @@ config/examples/
 - `.env` 仅允许开发期且必须 gitignored；生产使用明确 Secret provider。
 - API 对 Secret 只返回 configured 状态。
 
-所有 path/executable 使用 Ref：
+日常业务配置直接保存**服务运行机器**上的绝对路径：
 
 ```text
-repositoryRef
-outputDirectoryRef
-executableRef
+localizationSource.path
+modificationWorkspace.path
+finalActions[type=patch].outputDirectory
 ```
 
-业务项目配置不得直接写机器盘符。
+这些路径属于 `.local/config.json` 的机器配置，不提交 Git；Web 客户端看到的“本地路径”始终指 CodeFixer 服务主机，而不是访问浏览器的电脑。内部 `executableBindings` 仍可使用稳定 Ref，但不暴露在日常项目 UI 中。迁移到另一台机器时重新配置路径，不在共享 SPEC 或默认配置中写死 Windows 盘符。
 
 ## 10. Migration
 

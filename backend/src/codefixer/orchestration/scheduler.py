@@ -12,6 +12,8 @@ from codefixer.infrastructure.task_store import TaskStore
 from codefixer.orchestration.factory import RunExecutor
 from codefixer.orchestration.recovery import RecoveryService
 
+DEFAULT_MAX_CONCURRENT_TASKS = 8
+
 
 class Scheduler:
     def __init__(
@@ -66,7 +68,11 @@ class Scheduler:
                 # Manual provider test/poll endpoints expose the concrete provider error to admins.
                 continue
 
-        capacity = loaded.config.execution.maxConcurrentTasks - len(self._active)
+        configured_limit = getattr(
+            loaded.config.execution, "maxConcurrentTasks", DEFAULT_MAX_CONCURRENT_TASKS
+        )
+        max_concurrent_tasks = max(1, int(configured_limit))
+        capacity = max_concurrent_tasks - len(self._active)
         if capacity <= 0:
             return
         with connect_database(self.db_path) as connection:

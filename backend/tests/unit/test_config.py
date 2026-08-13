@@ -42,3 +42,25 @@ def test_legacy_agent_profile_id__migrates_to_current_model(tmp_path: Path, monk
     loaded = load_config(config_path)
 
     assert loaded.config.execution.currentModelId == "gpt-5.6-sol"
+
+
+def test_missing_concurrency_fields_receive_current_defaults(tmp_path: Path):
+    config_path = tmp_path / "codefixer.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "execution": {
+                    "mode": "awaitingStart",
+                    "currentModelId": "claude-sonnet",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    execution = load_config(config_path).config.execution
+
+    assert execution.maxConcurrentTasks == 8
+    assert execution.maxConcurrentLlmCalls == 4
+    assert execution.baselineCohortWindowMs == 2000

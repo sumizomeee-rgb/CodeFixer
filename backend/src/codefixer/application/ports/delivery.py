@@ -29,6 +29,10 @@ class FinalActionResult:
     def succeeded(self) -> bool:
         return self.status == "succeeded"
 
+    @property
+    def terminal(self) -> bool:
+        return self.status in {"succeeded", "failed", "skipped"}
+
 
 class FinalAction(Protocol):
     action_id: str

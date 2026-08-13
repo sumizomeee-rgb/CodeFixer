@@ -75,13 +75,8 @@ def main() -> int:
         runtime = build_agent_runtime(profile, {"claude-code-cli": {"command": ["claude"]}})
         project = {
             "id": "controlled-haiku-demo",
-            "modificationSource": {"id": "project-source", "type": "git", "repositoryRef": "demo-repo"},
-            "agents": {
-                "scopeDiscovery": "claude-haiku-smoke",
-                "discovery": "claude-haiku-smoke",
-                "repair": "claude-haiku-smoke",
-                "review": "claude-haiku-smoke",
-            },
+            "localizationSource": {"id": "localization-source", "type": "repository", "path": str(repo)},
+            "modificationWorkspace": {"id": "modification-workspace", "path": str(repo), "vcsKind": "git"},
             "finalActions": [{"id": "patch-only", "type": "patch"}],
         }
         # sqlite3.Connection 的上下文管理器只提交事务，并不会关闭文件句柄。
@@ -103,7 +98,7 @@ def main() -> int:
                     "v1",
                     True,
                 ),
-                project["id"],
+                str(project["id"]),
                 "automatic",
             )
             run_id = task["runs"][0]["id"]

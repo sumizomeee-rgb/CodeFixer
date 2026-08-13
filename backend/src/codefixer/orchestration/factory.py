@@ -5,21 +5,31 @@ from pathlib import Path
 from typing import Any
 
 from codefixer.adapters.agents import build_agent_runtime
+from codefixer.adapters.delivery.github import (
+    GitHubCli,
+    GitHubDeliveryMaterializer,
+    GitHubPrDelivery,
+    GitHubPrFinalAction,
+)
 from codefixer.adapters.delivery.gitlab import (
     GitDeliveryMaterializer,
     GitLabMrDelivery,
     GitLabMrFinalAction,
 )
-from codefixer.adapters.delivery_patch import PatchFinalAction
+from codefixer.adapters.delivery_patch import FallbackPatchFinalAction, PatchFinalAction
+from codefixer.adapters.sources.directory import DirectoryReadOnlySourceAdapter
 from codefixer.adapters.sources.git import GitSourceAdapter
 from codefixer.adapters.sources.svn import SvnSourceAdapter
 from codefixer.adapters.tickets.factory import build_ticket_provider
 from codefixer.application.ports.delivery import FinalAction, FrozenDeliveryContext
-from codefixer.application.ports.sources import SourcePolicy
+from codefixer.application.ports.sources import ModificationSourceAdapter, SourcePolicy
+from codefixer.application.services.baseline_cohorts import BaselineCohortCoordinator, CohortSourceAdapter
 from codefixer.application.services.delivery import DeliveryCoordinator
-from codefixer.application.services.preflight import resolve_path_binding, run_project_preflight
+from codefixer.application.services.llm_slots import LeasedAgentRuntime, LlmSlotPool
+from codefixer.application.services.preflight import run_project_preflight
 from codefixer.application.services.stability import PreDeliveryStabilityGuard
 from codefixer.application.services.verification import VerificationRunner, VerificationStep
+from codefixer.application.services.workspace_detection import detect_workspace
 from codefixer.config import LoadedConfig
 from codefixer.infrastructure.artifact_index import ArtifactIndex
 from codefixer.infrastructure.config_store import ConfigStore
@@ -47,6 +57,10 @@ class RunExecutor:
         tasks = TaskStore(self.connection)
         summary = tasks.get_run_summary(run_id)
         loaded = self.config_store.reload()
+        # SQLite connections are process-local; persistent LLM/cohort services use the
+        # actual database opened by this executor, including isolated test deployments.
+        database_row = self.connection.execute("PRAGMA database_list").fetchone()
+        database_path = Path(str(database_row[2])).resolve() if database_row is not None else loaded.data_root / "codefixer.db"
         frozen_manifest = loaded.data_root / "tasks" / str(summary["task_id"]) / "runs" / run_id / "freeze-change" / "change-manifest.json"
         frozen_config = loaded.data_root / "tasks" / str(summary["task_id"]) / "runs" / run_id / "snapshot" / "config-snapshot.json"
         if frozen_manifest.is_file() and frozen_config.is_file():
@@ -61,26 +75,57 @@ class RunExecutor:
         if not preflight["ready"]:
             return self._fail_before_execution(tasks, summary, run_id, code="configuration_not_ready", summary_text="Project preflight failed before execution", retryable=True, checks=preflight["checks"])
         try:
-            return self._execute_fresh(run_id, tasks, loaded, project, summary)
+            return self._execute_fresh(run_id, tasks, loaded, project, summary, database_path)
         except (KeyError, ValueError, ConfigurationNotReady) as exc:
             return self._fail_before_execution(tasks, summary, run_id, code="configuration_not_ready", summary_text=str(exc), retryable=True, checks=preflight["checks"])
 
-    def _execute_fresh(self, run_id: str, tasks: TaskStore, loaded: LoadedConfig, project: dict[str, Any], run_summary: dict[str, Any]) -> PipelineResult:
+    def _execute_fresh(self, run_id: str, tasks: TaskStore, loaded: LoadedConfig, project: dict[str, Any], run_summary: dict[str, Any], database_path: Path) -> PipelineResult:
         project_id = str(project.get("id", ""))
-        source_config = dict(project.get("modificationSource") or {})
-        repository_ref = str(source_config.get("repositoryRef", ""))
-        repository = resolve_path_binding(loaded, repository_ref)
-        if repository is None:
+        source_config = dict(project.get("modificationWorkspace") or {})
+        repository_value = str(source_config.get("repositoryRoot") or source_config.get("path") or "")
+        repository = Path(repository_value).resolve() if repository_value else None
+        if repository is None or not repository.is_dir():
             raise ConfigurationNotReady(project_id, [])
-        executable_ref = str(source_config.get("executableRef") or ("git-cli" if source_config.get("type") == "git" else "svn-cli"))
+        source_type = str(source_config.get("vcsKind"))
+        executable_ref = "git-cli" if source_type == "git" else "svn-cli"
         source_command = self._command(loaded.config.executableBindings, executable_ref)
-        source_type = str(source_config.get("type"))
         if source_type == "git":
-            source = GitSourceAdapter(repository, source_command)
+            raw_source: ModificationSourceAdapter = GitSourceAdapter(repository, source_command)
         elif source_type == "svn":
-            source = SvnSourceAdapter(repository, source_command, LeaseStore(self.connection))
+            raw_source = SvnSourceAdapter(repository, source_command, LeaseStore(self.connection))
         else:
             raise ConfigurationNotReady(project_id, [])
+        cohort = BaselineCohortCoordinator(
+            database_path,
+            window_ms=loaded.config.execution.baselineCohortWindowMs,
+        )
+        source = CohortSourceAdapter(
+            raw_source,
+            cohort,
+            repository_root=repository,
+            baseline_identity=str(source_config.get("remoteUrl") or repository),
+            baseline_resolver=(
+                raw_source.refresh_and_current_revision
+                if isinstance(raw_source, (GitSourceAdapter, SvnSourceAdapter))
+                else raw_source.current_revision
+            ),
+            cancel_check=tasks.is_cancel_requested,
+        )
+
+        localization_config = dict(project.get("localizationSource") or {})
+        localization_path_value = str(localization_config.get("path") or "")
+        localization_path = Path(localization_path_value).resolve() if localization_path_value else None
+        if localization_path is None or not localization_path.is_dir():
+            raise ConfigurationNotReady(project_id, [])
+        localization_detection = detect_workspace(str(localization_path))
+        localization_repository_value = str(localization_detection.get("repositoryRoot") or localization_path)
+        localization_repository = Path(localization_repository_value).resolve()
+        if localization_detection.get("vcsKind") == "git":
+            localization_source: ModificationSourceAdapter = GitSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "git-cli"))
+        elif localization_detection.get("vcsKind") == "svn":
+            localization_source = SvnSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "svn-cli"), LeaseStore(self.connection))
+        else:
+            localization_source = DirectoryReadOnlySourceAdapter(localization_path)
 
         provider_id = str(run_summary.get("provider_instance_id", ""))
         provider_config = next((dict(item) for item in loaded.config.ticketProviders if str(item.get("id")) == provider_id), None)
@@ -95,10 +140,13 @@ class RunExecutor:
             raise ValueError(f"current model does not exist: {current_profile_id}")
         # Every LLM-consuming stage in a run uses the same globally selected model.
         # Build separate runtime objects so the stages remain independent sessions.
-        scope_discovery_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
-        discovery_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
-        repair_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
-        review_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
+        pool = LlmSlotPool(database_path, capacity=loaded.config.execution.maxConcurrentLlmCalls)
+        def leased_runtime() -> LeasedAgentRuntime:
+            return LeasedAgentRuntime(build_agent_runtime(current_profile, loaded.config.executableBindings), pool, task_run_id=run_id)
+        scope_discovery_agent = leased_runtime()
+        discovery_agent = leased_runtime()
+        repair_agent = leased_runtime()
+        review_agent = leased_runtime()
 
         verification_config = project.get("verification") or {}
         default_timeout = int(verification_config.get("timeoutSeconds", 1200))
@@ -111,6 +159,7 @@ class RunExecutor:
             verification_steps.append(VerificationStep(id=str(raw.get("id", "step")), command=tuple([*executable, *args]), timeout_seconds=int(raw.get("timeoutSeconds", default_timeout)), required=bool(raw.get("required", True)), working_directory=str(raw.get("workingDirectory", "."))))
 
         actions = self._build_delivery_actions(loaded, project)
+        delivery_store = DeliveryStore(self.connection)
         policy = SourcePolicy(
             allowed_roots=tuple(str(item) for item in source_config.get("allowedRoots") or (".",)),
             denied_roots=tuple(str(item) for item in source_config.get("deniedRoots") or ()),
@@ -121,6 +170,7 @@ class RunExecutor:
             artifacts=ArtifactStore(loaded.data_root, SchemaRegistry(self.contracts_root)),
             artifact_index=ArtifactIndex(self.connection, loaded.data_root),
             source=source,
+            localization_source=localization_source,
             scope_discovery_agent=scope_discovery_agent,
             discovery_agent=discovery_agent,
             repair_agent=repair_agent,
@@ -129,7 +179,10 @@ class RunExecutor:
             verification_steps=tuple(verification_steps),
             project=project,
             source_policy=policy,
-            delivery=DeliveryCoordinator(tuple(actions)),
+            delivery=DeliveryCoordinator(
+                tuple(actions),
+                fallback_action=FallbackPatchFinalAction(store=delivery_store, data_root=loaded.data_root, project_id=project_id),
+            ),
             max_repair_attempts=loaded.config.execution.maxRepairAttempts,
             stability_guard=stability_guard,
         ).run(run_id)
@@ -159,8 +212,13 @@ class RunExecutor:
             patch_path = manifest_path.parent / str(manifest["diff"]["path"])
             actions = self._build_delivery_actions(loaded, project)
             stage_id = tasks.start_stage(run_id, "deliver", tasks.next_stage_attempt(run_id, "deliver"))
-            results = DeliveryCoordinator(tuple(actions)).execute(FrozenDeliveryContext(task_id=task_id, run_id=run_id, change_version=int(manifest["change_version"]), source_id=str(manifest["modification_source"]["id"]), base_revision=str(manifest["modification_source"]["base_revision"]), patch_path=patch_path, patch_sha256=str(manifest["diff"]["sha256"]), manifest_path=manifest_path))
-            if any(not result.succeeded for result in results):
+            coordinator = DeliveryCoordinator(
+                tuple(actions),
+                fallback_action=FallbackPatchFinalAction(store=DeliveryStore(self.connection), data_root=loaded.data_root, project_id=str(project.get("id", "project"))),
+            )
+            report = coordinator.execute_report(FrozenDeliveryContext(task_id=task_id, run_id=run_id, change_version=int(manifest["change_version"]), source_id=str(manifest["modification_source"]["id"]), base_revision=str(manifest["modification_source"]["base_revision"]), patch_path=patch_path, patch_sha256=str(manifest["diff"]["sha256"]), manifest_path=manifest_path))
+            results = report.results
+            if not report.succeeded:
                 tasks.finish_stage(stage_id, status="failed", failure={"code": "delivery_failed"})
                 failure = {"code": "delivery_failed", "stage": "deliver", "summary": "Recovered delivery still has failed required actions", "retryable": True, "side_effects": [result.detail for result in results if result.succeeded]}
                 tasks.fail_run(run_id, failure)
@@ -180,17 +238,30 @@ class RunExecutor:
             action = dict(raw_action)
             action_id = str(action.get("id", ""))
             if action.get("type") == "patch":
-                output = resolve_path_binding(loaded, str(action.get("outputDirectoryRef", "")))
+                output_value = str(action.get("outputDirectory") or "")
+                output = Path(output_value).resolve() if output_value else None
                 if output is None:
-                    raise ValueError(f"Patch output binding missing for {action_id}")
+                    raise ValueError(f"Patch output directory missing for {action_id}")
                 actions.append(PatchFinalAction(action_id=action_id, action_version=1, store=delivery_store, output_directory=output, filename_template=str(action.get("filenameTemplate", "{task_id}-{run_id}.patch")), overwrite=bool(action.get("overwrite", False))))
             elif action.get("type") == "gitlabMr":
-                materialization = resolve_path_binding(loaded, str(action.get("repositoryRef", "")))
-                if materialization is None:
+                workspace = dict(project.get("modificationWorkspace") or {})
+                materialization_value = str(workspace.get("repositoryRoot") or workspace.get("path") or "")
+                materialization = Path(materialization_value).resolve() if materialization_value else None
+                if materialization is None or not materialization.is_dir():
                     raise ValueError(f"GitLab repository missing for {action_id}")
-                materializer = GitDeliveryMaterializer(materialization, self._command(loaded.config.executableBindings, str(action.get("gitExecutableRef", "git-cli"))))
+                materializer = GitDeliveryMaterializer(materialization, self._command(loaded.config.executableBindings, "git-cli"))
                 targets = tuple(str(item) for item in (action.get("targetBranches") or []))
                 actions.append(GitLabMrFinalAction(action_id=action_id, action_version=1, delivery=GitLabMrDelivery(delivery_store, materializer), config=action, target_branches=targets, work_root=loaded.data_root / "delivery-work", title_template=str(action.get("titleTemplate", "[CodeFixer] {task_id}")), description_template=str(action.get("descriptionTemplate", "Automated repair from CodeFixer run {run_id}."))))
+            elif action.get("type") == "githubPr":
+                workspace = dict(project.get("modificationWorkspace") or {})
+                materialization_value = str(workspace.get("repositoryRoot") or workspace.get("path") or "")
+                materialization = Path(materialization_value).resolve() if materialization_value else None
+                if materialization is None or not materialization.is_dir():
+                    raise ValueError(f"GitHub repository missing for {action_id}")
+                materializer = GitHubDeliveryMaterializer(materialization, self._command(loaded.config.executableBindings, "git-cli"))
+                github = GitHubCli(materialization, self._command(loaded.config.executableBindings, "gh-cli"))
+                targets = tuple(str(item) for item in (action.get("targetBranches") or []))
+                actions.append(GitHubPrFinalAction(action_id=action_id, action_version=1, delivery=GitHubPrDelivery(delivery_store, materializer, github), config=action, target_branches=targets, work_root=loaded.data_root / "delivery-work", title_template=str(action.get("titleTemplate", "[CodeFixer] {task_id}")), description_template=str(action.get("descriptionTemplate", "Automated repair from CodeFixer run {run_id}."))))
         return actions
 
     @staticmethod

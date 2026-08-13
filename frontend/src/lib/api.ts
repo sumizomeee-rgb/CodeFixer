@@ -1,4 +1,4 @@
-import type { ExecutionMode, PreflightResult, ProjectConfig, ReadinessResponse, SettingsResponse } from '../entities/config'
+import type { ExecutionMode, PreflightResult, ProjectConfig, ReadinessResponse, SettingsResponse, WorkspaceDetection } from '../entities/config'
 import type { DashboardData, TaskRecord } from '../entities/task'
 
 export class ApiError extends Error { status:number; code:string; constructor(status:number,code:string,message:string){super(message);this.status=status;this.code=code} }
@@ -12,6 +12,8 @@ export const api={
   setExecutionMode:(mode:ExecutionMode,etag:string)=>request<{mode:ExecutionMode;etag:string}>('/api/settings/execution-mode',{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify({mode})}),
   projects:()=>request<{items:ProjectConfig[];etag:string}>('/api/projects'),
   createProject:(project:ProjectConfig,etag:string)=>request<{project:ProjectConfig;etag:string}>('/api/projects',{method:'POST',headers:{'If-Match':etag},body:JSON.stringify(project)}),
+  updateProject:(projectId:string,project:ProjectConfig,etag:string)=>request<{project:ProjectConfig;etag:string}>(`/api/projects/${encodeURIComponent(projectId)}`,{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify(project)}),
+  detectWorkspace:(path:string)=>request<WorkspaceDetection>('/api/workspaces/detect',{method:'POST',body:JSON.stringify({path})}),
   preflight:(projectId:string)=>request<PreflightResult>(`/api/projects/${encodeURIComponent(projectId)}/preflight`,{method:'POST'}),
   providers:()=>request<{items:Array<Record<string,unknown>&{id?:string;type?:string;enabled?:boolean}>}>('/api/providers'),
   testProvider:(id:string)=>request<Record<string,unknown>>(`/api/providers/${encodeURIComponent(id)}/test`,{method:'POST'}),

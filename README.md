@@ -4,7 +4,7 @@ CodeFixer 是一个通用的 Bug 自动修复与交付平台。
 
 Web 管理界面与 API 同源，第一版正式服务端口统一为 `9522`。
 
-它从外部工单系统收录 Bug，通过独立的 Discovery 与 Repair Agent 自主反查和修改唯一代码源，经过验证与 Review 后，按项目配置生成 Patch 和/或创建普通 GitLab MR。
+它从外部工单系统收录 Bug，通过独立的范围调查与正式定位 Agent 反查只读资料源，再修改唯一物理工作区；经过验证与 Review 后，可同时生成 Patch、GitLab MR 和 GitHub PR。
 
 ## 规范文档
 
@@ -21,10 +21,10 @@ CodeFixer 的第一版施工以以下规范共同作为基准：
 - 工单来源：Redmine、TAPD。
 - 修改源：Git、SVN。
 - Agent Runtime：Claude Code、Codex、OpenCode。
-- 最终动作：Patch、GitLab MR。
+- 最终动作：Patch、GitLab MR、GitHub PR；远端动作失败时自动保留 fallback Patch。
 - 执行方式：全自动或待用户点击一次开始。
 - 一个 Bug 只修改一个代码源，但可以执行多个最终动作。
-- 不实现 GitHub PR、自动合并 MR、SVN 直接提交和多修改源任务。
+- 不实现自动合并 MR/PR、SVN 直接提交和多修改工作区任务。
 
 ## 当前实现
 
@@ -40,6 +40,8 @@ CodeFixer 的第一版施工以以下规范共同作为基准：
 - Freeze Change：不可变 patch、文件内容快照、hash、verification、review。
 - Patch 幂等交付。
 - GitLab MR 多目标交付、partial success、远端对账与防重复创建。
+- GitHub PR 多目标交付，以及远端失败时不掩盖原失败的保底 Patch。
+- 全局持久化 LLM 并发池（默认 4）与同源短窗口 BaselineCohort。
 - Freeze 前/后不同的崩溃恢复策略与 SQLite Scheduler。
 - 实时维修控制台、任务证据 Drawer、Provider、Project、Settings 自助配置界面。
 - Delivery-only retry：冻结后交付失败可以只重试外部动作，不重新调用 Agent。
@@ -117,8 +119,9 @@ Windows：
 
 ## 配置原则
 
-- 共享项目只保存 `pathBinding` / `executableRef` / `SecretRef` 等稳定引用。
-- 当前机器的仓库路径和可执行程序可以放在 local override。
+- `localizationSource.path`、`modificationWorkspace.path` 和 Patch 输出目录保存在本机 `.local/config.json`；它们都是 CodeFixer 服务主机路径。
+- 共享默认配置和 SPEC 不写死任何开发机路径；换机后通过 Web 重新配置本机路径。
+- 内部命令仍使用 `executableRef`，工单登录信息使用 `SecretRef`，日常项目 UI 不暴露这些实现引用。
 - Secret 明文独立存储，Web API 只返回 `configured` 状态。
 - 运行中 TaskRun 冻结输入；配置热更新只影响后续 Run。
 

@@ -56,7 +56,8 @@ class DeliveryStore:
             started = _now() if status in {"running", "reconciling"} else None
             finished = _now() if status in {"succeeded", "failed", "skipped"} else None
             self.connection.execute(
-                """UPDATE delivery_action_runs SET status=?,outcome=?,result_json=?,
+                """UPDATE delivery_action_runs SET status=?,outcome=?,
+                   result_json=COALESCE(?,result_json),
                    started_at=COALESCE(started_at,?),finished_at=COALESCE(?,finished_at) WHERE id=?""",
                 (
                     status,
@@ -97,7 +98,8 @@ class DeliveryStore:
             finished = _now() if status in {"succeeded", "failed", "skipped"} else None
             self.connection.execute(
                 """UPDATE delivery_target_runs SET status=?,outcome=?,remote_ref=COALESCE(?,remote_ref),
-                   external_id=COALESCE(?,external_id),external_url=COALESCE(?,external_url),result_json=?,
+                   external_id=COALESCE(?,external_id),external_url=COALESCE(?,external_url),
+                   result_json=COALESCE(?,result_json),
                    started_at=COALESCE(started_at,?),finished_at=COALESCE(?,finished_at) WHERE id=?""",
                 (
                     status,

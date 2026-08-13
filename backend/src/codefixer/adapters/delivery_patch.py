@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -75,3 +76,99 @@ class PatchFinalAction:
             detail = {"error": str(exc)}
             self.store.mark_action(action_db_id, status="failed", outcome="failure", result=detail)
             return FinalActionResult(self.action_id, self.action_type, "failed", "failure", detail)
+
+
+def _safe_project_component(project_id: str) -> str:
+    value = re.sub(r"[^A-Za-z0-9._-]+", "-", project_id).strip(".-")
+    return value[:100] or "project"
+
+
+class FallbackPatchFinalAction:
+    """将远端动作失败恢复成可下载 Patch，但不满足原必需动作。"""
+
+    action_id = "__fallback_patch__"
+    action_type = "fallbackPatch"
+
+    def __init__(
+        self,
+        *,
+        store: DeliveryStore,
+        data_root: Path,
+        project_id: str,
+        action_version: int = 1,
+    ) -> None:
+        self.store = store
+        self.output_directory = (
+            data_root.resolve() / "fallback-patches" / _safe_project_component(project_id)
+        )
+        self.action_version = action_version
+
+    def execute(
+        self,
+        context: FrozenDeliveryContext,
+        *,
+        triggered_by: tuple[str, ...],
+        reusable_patch: FinalActionResult | None,
+    ) -> FinalActionResult:
+        config = {
+            "outputDirectory": str(self.output_directory),
+            "filenameTemplate": "{task_id}-{run_id}-{change_version}.patch",
+        }
+        config_hash = hashlib.sha256(canonical_json(config).encode()).hexdigest()
+        intent_key = hashlib.sha256(
+            f"{context.run_id}:{self.action_id}:{self.action_version}:{config_hash}".encode()
+        ).hexdigest()
+        action = self.store.ensure_action(
+            task_run_id=context.run_id,
+            action_id=self.action_id,
+            action_version=self.action_version,
+            action_type=self.action_type,
+            config_hash=config_hash,
+            intent_key=intent_key,
+        )
+        action_db_id = int(action["id"])
+        self.store.mark_action(action_db_id, status="running")
+        try:
+            if reusable_patch is not None:
+                detail: dict[str, object] = {
+                    "path": str(reusable_patch.detail["path"]),
+                    "sha256": context.patch_sha256,
+                    "adoptedExisting": True,
+                    "reusedActionId": reusable_patch.action_id,
+                    "triggeredBy": list(triggered_by),
+                }
+            else:
+                delivered = deliver_patch(
+                    patch_bytes=context.patch_path.read_bytes(),
+                    expected_sha256=context.patch_sha256,
+                    output_directory=self.output_directory,
+                    filename=(
+                        f"{context.task_id}-{context.run_id}-{context.change_version}.patch"
+                    ),
+                )
+                detail = {
+                    "path": str(delivered.path),
+                    "sha256": delivered.sha256,
+                    "adoptedExisting": delivered.adopted_existing,
+                    "reusedActionId": None,
+                    "triggeredBy": list(triggered_by),
+                }
+            self.store.mark_action(
+                action_db_id, status="succeeded", outcome="success", result=detail
+            )
+            return FinalActionResult(
+                self.action_id, self.action_type, "succeeded", "success", detail
+            )
+        except Exception as exc:
+            detail = {
+                "code": "fallback_patch_failed",
+                "error": str(exc),
+                "errorType": type(exc).__name__,
+                "triggeredBy": list(triggered_by),
+            }
+            self.store.mark_action(
+                action_db_id, status="failed", outcome="failure", result=detail
+            )
+            return FinalActionResult(
+                self.action_id, self.action_type, "failed", "failure", detail
+            )

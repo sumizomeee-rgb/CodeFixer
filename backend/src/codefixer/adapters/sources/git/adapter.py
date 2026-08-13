@@ -5,12 +5,13 @@ from pathlib import Path
 
 from codefixer.adapters.sources.common import CliSourceBase, SourceCommandError, patch_hash
 from codefixer.application.ports.sources import CandidateChange, SourcePolicy, WorkspaceManifest
+from codefixer.infrastructure.process_runner import ProcessRunner
 
 
 class GitSourceAdapter(CliSourceBase):
-    source_type = "git"
+    source_type: str = "git"
 
-    def __init__(self, repository_path: Path, command_prefix: list[str], runner=None):
+    def __init__(self, repository_path: Path, command_prefix: list[str], runner: ProcessRunner | None = None):
         super().__init__(command_prefix, runner)
         self.repository_path = repository_path.resolve()
 
@@ -19,6 +20,31 @@ class GitSourceAdapter(CliSourceBase):
         if not revision:
             raise SourceCommandError("git current revision is empty")
         return revision
+
+    def refresh_and_current_revision(self) -> str:
+        """Refresh origin before a BaselineCohort freezes one shared revision."""
+        fetched = self._run(
+            ["fetch", "--prune", "origin"],
+            cwd=self.repository_path,
+            timeout=600,
+            allow_failure=True,
+        )
+        if fetched.exit_code != 0:
+            return self.current_revision()
+        branch = self._run(
+            ["symbolic-ref", "--quiet", "--short", "HEAD"],
+            cwd=self.repository_path,
+            allow_failure=True,
+        ).stdout.strip()
+        if branch:
+            remote = self._run(
+                ["rev-parse", "--verify", f"origin/{branch}"],
+                cwd=self.repository_path,
+                allow_failure=True,
+            ).stdout.strip()
+            if remote:
+                return remote
+        return self.current_revision()
 
     def prepare(
         self,

@@ -24,7 +24,9 @@ class ExecutionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: str = "awaitingStart"
     currentModelId: str = "claude-sonnet"
-    maxConcurrentTasks: int = Field(default=3, ge=1, le=64)
+    maxConcurrentTasks: int = Field(default=8, ge=1, le=64)
+    maxConcurrentLlmCalls: int = Field(default=4, ge=1, le=64)
+    baselineCohortWindowMs: int = Field(default=2000, ge=0, le=10000)
     maxRepairAttempts: int = Field(default=3, ge=1, le=20)
 
 
@@ -38,7 +40,6 @@ class AppConfig(BaseModel):
     agentProfiles: list[dict[str, Any]] = []
     knowledgeProviders: list[dict[str, Any]] = []
     executableBindings: dict[str, dict[str, Any]] = {}
-    pathBindings: dict[str, str] = {}
     projects: list[dict[str, Any]] = []
 
 
@@ -67,6 +68,14 @@ def _normalize_legacy_fields(value: dict[str, Any]) -> dict[str, Any]:
     if isinstance(execution, dict) and "agentProfileId" in execution:
         normalized = dict(execution)
         normalized["currentModelId"] = normalized.pop("agentProfileId")
+        result["execution"] = normalized
+    execution = result.get("execution")
+    if isinstance(execution, dict):
+        normalized = dict(execution)
+        normalized.setdefault("maxConcurrentTasks", 8)
+        normalized.setdefault("maxConcurrentLlmCalls", 4)
+        normalized.setdefault("baselineCohortWindowMs", 2000)
+        normalized.setdefault("maxRepairAttempts", 3)
         result["execution"] = normalized
     return result
 

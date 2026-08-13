@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import http.client
 import os
 import shutil
 import signal
 import subprocess
 import tempfile
 import time
-import urllib.request
+import urllib.parse
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,17 +44,37 @@ def validate_windows_entry_scripts() -> None:
         )
 
 
-def wait_ready(url: str, timeout: float = 30) -> None:
+def wait_ready(
+    url: str,
+    timeout: float = 30,
+    *,
+    process: subprocess.Popen[bytes] | None = None,
+    log_path: Path | None = None,
+) -> None:
     deadline = time.monotonic() + timeout
+    parsed = urllib.parse.urlsplit(url)
+    if parsed.hostname is None:
+        raise ValueError(f"invalid readiness URL: {url}")
     while time.monotonic() < deadline:
+        if process is not None and process.poll() is not None:
+            detail = log_path.read_text(encoding="utf-8", errors="replace") if log_path and log_path.is_file() else ""
+            raise RuntimeError(f"CodeFixer test server exited with code {process.returncode}\n{detail}")
+        connection: http.client.HTTPConnection | None = None
         try:
-            with urllib.request.urlopen(url, timeout=1) as response:
-                if b'"ready":true' in response.read().replace(b" ", b""):
-                    return
-        except Exception:
+            connection = http.client.HTTPConnection(parsed.hostname, parsed.port or 80, timeout=1)
+            connection.request("GET", parsed.path or "/")
+            response = connection.getresponse()
+            payload = response.read().replace(b" ", b"")
+            if b'"ready":true' in payload or b'"status":"ok"' in payload:
+                return
+        except (OSError, http.client.HTTPException):
             pass
+        finally:
+            if connection is not None:
+                connection.close()
         time.sleep(.25)
-    raise RuntimeError("CodeFixer test server did not become ready")
+    detail = log_path.read_text(encoding="utf-8", errors="replace") if log_path and log_path.is_file() else ""
+    raise RuntimeError(f"CodeFixer test server did not become ready\n{detail}")
 
 
 def stop_process(process: subprocess.Popen[bytes]) -> None:
@@ -109,19 +130,21 @@ def main() -> int:
             kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
         else:
             kwargs["start_new_session"] = True
-        process = subprocess.Popen(
-            [str(VENV_PY), "-m", "uvicorn", "codefixer.main:app", "--host", "127.0.0.1", "--port", "9522"],
-            cwd=ROOT,
-            env=server_env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.STDOUT,
-            **kwargs,
-        )
-        try:
-            wait_ready("http://127.0.0.1:9522/api/readiness")
-            run([npm, "run", "test:e2e"], cwd=FRONTEND, env=browser_env)
-        finally:
-            stop_process(process)
+        server_log_path = Path(temp) / "server.log"
+        with server_log_path.open("wb") as server_log:
+            process = subprocess.Popen(
+                [str(VENV_PY), "-m", "uvicorn", "codefixer.main:app", "--host", "127.0.0.1", "--port", "9522"],
+                cwd=ROOT,
+                env=server_env,
+                stdout=server_log,
+                stderr=subprocess.STDOUT,
+                **kwargs,
+            )
+            try:
+                wait_ready("http://127.0.0.1:9522/api/health", process=process, log_path=server_log_path)
+                run([npm, "run", "test:e2e"], cwd=FRONTEND, env=browser_env)
+            finally:
+                stop_process(process)
     return 0
 
 

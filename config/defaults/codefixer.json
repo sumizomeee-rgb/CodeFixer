@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "server": {"host": "0.0.0.0", "port": 9522},
   "storage": {"dataRoot": "../../data"},
-  "execution": {"mode": "awaitingStart", "currentModelId": "claude-sonnet", "maxConcurrentTasks": 3, "maxRepairAttempts": 3},
+  "execution": {"mode": "awaitingStart", "currentModelId": "claude-sonnet", "maxConcurrentTasks": 8, "maxConcurrentLlmCalls": 4, "baselineCohortWindowMs": 2000, "maxRepairAttempts": 3},
   "ticketProviders": [],
   "agentProfiles": [
     {"id": "claude-code", "runtime": "claudeCode", "executableRef": "claude-code-cli", "timeoutSeconds": 1800},
@@ -21,8 +21,8 @@
     "svn-cli": {"command": ["svn"], "versionArgs": ["--version", "--quiet"], "versionConstraint": null},
     "claude-code-cli": {"command": ["claude"], "versionArgs": ["--version"], "versionConstraint": null},
     "codex-cli": {"command": ["codex"], "versionArgs": ["--version"], "versionConstraint": null},
-    "opencode-cli": {"command": ["opencode"], "versionArgs": ["--version"], "versionConstraint": null}
+    "opencode-cli": {"command": ["opencode"], "versionArgs": ["--version"], "versionConstraint": null},
+    "gh-cli": {"command": ["gh"], "versionArgs": ["--version"], "versionConstraint": null}
   },
-  "pathBindings": {"primary-patches": "patches"},
   "projects": []
 }

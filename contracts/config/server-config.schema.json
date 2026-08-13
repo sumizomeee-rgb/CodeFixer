@@ -7,13 +7,84 @@
     "schemaVersion": {"const": 1},
     "server": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}, "additionalProperties": false},
     "storage": {"type": "object", "required": ["dataRoot"], "properties": {"dataRoot": {"type": "string", "minLength": 1}}, "additionalProperties": false},
-    "execution": {"type": "object", "required": ["mode", "maxConcurrentTasks", "maxRepairAttempts"], "properties": {"mode": {"enum": ["automatic", "awaitingStart"]}, "currentModelId": {"type": "string", "minLength": 1}, "maxConcurrentTasks": {"type": "integer", "minimum": 1}, "maxRepairAttempts": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
+    "execution": {"type": "object", "required": ["mode", "currentModelId", "maxConcurrentTasks", "maxConcurrentLlmCalls", "baselineCohortWindowMs", "maxRepairAttempts"], "properties": {"mode": {"enum": ["automatic", "awaitingStart"]}, "currentModelId": {"type": "string", "minLength": 1}, "maxConcurrentTasks": {"type": "integer", "minimum": 1}, "maxConcurrentLlmCalls": {"type": "integer", "minimum": 1}, "baselineCohortWindowMs": {"type": "integer", "minimum": 0, "maximum": 10000}, "maxRepairAttempts": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
     "ticketProviders": {"type": "array"},
     "agentProfiles": {"type": "array", "items": {"type": "object", "required": ["id", "runtime", "executableRef"], "properties": {"id": {"type": "string", "minLength": 1}, "runtime": {"enum": ["claudeCode", "codex", "opencode"]}, "executableRef": {"type": "string", "minLength": 1}, "model": {"type": ["string", "null"]}, "effort": {"type": ["string", "null"]}, "timeoutSeconds": {"type": "integer", "minimum": 1}, "maxBudgetUsd": {"type": ["number", "null"], "minimum": 0}, "extraArgs": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}},
     "knowledgeProviders": {"type": "array"},
     "executableBindings": {"type": "object"},
-    "pathBindings": {"type": "object", "additionalProperties": {"type": "string"}},
-    "projects": {"type": "array"}
+    "projects": {"type": "array", "items": {"$ref": "#/$defs/project"}}
+  },
+  "$defs": {
+    "localizationSource": {
+      "type": "object",
+      "required": ["type", "path"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "type": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "mapping": {"type": "object"},
+        "readOnly": {"type": "boolean"}
+      },
+      "additionalProperties": true
+    },
+    "modificationWorkspace": {
+      "type": "object",
+      "required": ["path"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "path": {"type": "string", "minLength": 1},
+        "allowedRoots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "deniedRoots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+        "allowedExtensions": {"type": "array", "items": {"type": "string", "pattern": "^\\.[^/\\\\]+$"}, "uniqueItems": true},
+        "vcsKind": {"enum": ["git", "svn", "unknown"]},
+        "hostingKind": {"enum": ["gitlab", "github", "other", "none", "ambiguous"]},
+        "repositoryRoot": {"type": "string", "minLength": 1},
+        "remoteUrl": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "finalAction": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["id", "type", "outputDirectory"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "type": {"const": "patch"},
+            "outputDirectory": {"type": "string", "minLength": 1},
+            "filenameTemplate": {"type": "string", "minLength": 1},
+            "overwrite": {"type": "boolean"},
+            "required": {"type": "boolean"}
+          },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["id", "type", "targetBranches"],
+          "properties": {
+            "id": {"type": "string", "minLength": 1},
+            "type": {"enum": ["gitlabMr", "githubPr"]},
+            "targetBranches": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+            "titleTemplate": {"type": "string", "minLength": 1},
+            "descriptionTemplate": {"type": "string", "minLength": 1},
+            "required": {"type": "boolean"}
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "project": {
+      "type": "object",
+      "required": ["id", "name", "localizationSource", "modificationWorkspace", "finalActions"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "name": {"type": "string", "minLength": 1},
+        "localizationSource": {"$ref": "#/$defs/localizationSource"},
+        "modificationWorkspace": {"$ref": "#/$defs/modificationWorkspace"},
+        "finalActions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/finalAction"}}
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": false
 }

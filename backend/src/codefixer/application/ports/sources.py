@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Literal, Protocol
 
-SourceType = Literal["git", "svn"]
+SourceType = Literal["git", "svn", "directory"]
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,7 @@ class WorkspaceManifest:
     base_revision: str
     lease_key: str | None = None
     lease_owner: str | None = None
+    baseline_cohort_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -54,7 +55,7 @@ class CandidateChange:
 
 
 class ModificationSourceAdapter(Protocol):
-    source_type: SourceType
+    source_type: str
 
     def current_revision(self) -> str: ...
     def prepare(self, *, source_id: str, run_id: str, workspace_path: Path, base_revision: str | None = None) -> WorkspaceManifest: ...

@@ -22,15 +22,20 @@ def _referenced_executables(loaded: LoadedConfig) -> set[str]:
     for project in loaded.config.projects:
         if project.get("enabled", True) is False:
             continue
-        source = project.get("modificationSource") or {}
-        if source.get("executableRef"):
-            references.add(str(source["executableRef"]))
+        workspace = project.get("modificationWorkspace") or {}
+        vcs_kind = str(workspace.get("vcsKind") or "")
+        if vcs_kind == "git":
+            references.add("git-cli")
+        elif vcs_kind == "svn":
+            references.add("svn-cli")
         for step in (project.get("verification") or {}).get("steps") or []:
             if step.get("executableRef"):
                 references.add(str(step["executableRef"]))
         for action in project.get("finalActions") or []:
             if action.get("type") == "gitlabMr":
-                references.add(str(action.get("gitExecutableRef") or "git-cli"))
+                references.add("git-cli")
+            elif action.get("type") == "githubPr":
+                references.update(("git-cli", "gh-cli"))
     return references
 
 
