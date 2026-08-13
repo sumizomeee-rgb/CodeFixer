@@ -12,6 +12,13 @@ if (-not (Test-Path -LiteralPath $runScript)) {
     throw "scripts\run.py is missing."
 }
 
+Write-Host "[CodeFixer] Building frontend..."
+& $venvPython $runScript --build-only
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[CodeFixer] Build failed. Existing instance was left running."
+    exit $LASTEXITCODE
+}
+
 function Get-CodeFixerProcesses {
     @(Get-CimInstance Win32_Process | Where-Object {
         $commandLine = [string]$_.CommandLine
@@ -58,6 +65,6 @@ if ($targets.Count -gt 0) {
     Write-Host "[CodeFixer] No existing instance found."
 }
 
-Write-Host "[CodeFixer] Building frontend and starting server..."
-& $venvPython $runScript --build
+Write-Host "[CodeFixer] Starting server..."
+& $venvPython $runScript
 exit $LASTEXITCODE
