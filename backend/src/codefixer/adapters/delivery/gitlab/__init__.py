@@ -1,9 +1,8 @@
-from .client import GitLabClient, MergeRequestRef
-from .delivery import GitLabMrDelivery, GitLabTargetResult
+from .delivery import GitLabMrDelivery, GitLabTargetResult, MergeRequestRef
 from .final_action import GitLabMrFinalAction
 from .materializer import GitDeliveryMaterializer, MaterializedTarget
 
 __all__ = [
-    "GitLabClient", "MergeRequestRef", "GitLabMrDelivery", "GitLabTargetResult",
+    "MergeRequestRef", "GitLabMrDelivery", "GitLabTargetResult",
     "GitDeliveryMaterializer", "MaterializedTarget", "GitLabMrFinalAction",
 ]

@@ -7,7 +7,6 @@ from typing import Any
 from codefixer.adapters.agents import build_agent_runtime
 from codefixer.adapters.delivery.gitlab import (
     GitDeliveryMaterializer,
-    GitLabClient,
     GitLabMrDelivery,
     GitLabMrFinalAction,
 )
@@ -186,18 +185,12 @@ class RunExecutor:
                     raise ValueError(f"Patch output binding missing for {action_id}")
                 actions.append(PatchFinalAction(action_id=action_id, action_version=1, store=delivery_store, output_directory=output, filename_template=str(action.get("filenameTemplate", "{task_id}-{run_id}.patch")), overwrite=bool(action.get("overwrite", False))))
             elif action.get("type") == "gitlabMr":
-                connection_config = self._connection(loaded.config.connections, str(action.get("connectionRef", "")))
-                token_ref = str(connection_config.get("tokenSecretRef", ""))
-                token = self.config_store.get_secret(token_ref) if token_ref else None
-                if not token:
-                    raise ValueError(f"GitLab token secret missing: {token_ref}")
-                materialization = resolve_path_binding(loaded, str(action.get("materializationRepositoryRef", "")))
+                materialization = resolve_path_binding(loaded, str(action.get("repositoryRef", "")))
                 if materialization is None:
-                    raise ValueError(f"GitLab materialization repository missing for {action_id}")
+                    raise ValueError(f"GitLab repository missing for {action_id}")
                 materializer = GitDeliveryMaterializer(materialization, self._command(loaded.config.executableBindings, str(action.get("gitExecutableRef", "git-cli"))))
-                gitlab = GitLabClient(str(connection_config.get("baseUrl", "")), token)
                 targets = tuple(str(item) for item in (action.get("targetBranches") or []))
-                actions.append(GitLabMrFinalAction(action_id=action_id, action_version=1, delivery=GitLabMrDelivery(delivery_store, gitlab, materializer), project_id=str(action.get("projectPath", "")), config=action, target_branches=targets, work_root=loaded.data_root / "delivery-work", title_template=str(action.get("titleTemplate", "[CodeFixer] {task_id}")), description_template=str(action.get("descriptionTemplate", "Automated repair from CodeFixer run {run_id}."))))
+                actions.append(GitLabMrFinalAction(action_id=action_id, action_version=1, delivery=GitLabMrDelivery(delivery_store, materializer), config=action, target_branches=targets, work_root=loaded.data_root / "delivery-work", title_template=str(action.get("titleTemplate", "[CodeFixer] {task_id}")), description_template=str(action.get("descriptionTemplate", "Automated repair from CodeFixer run {run_id}."))))
         return actions
 
     @staticmethod
@@ -207,10 +200,3 @@ class RunExecutor:
         if not isinstance(command, list) or not command or not all(isinstance(item, str) and item for item in command):
             raise ValueError(f"executable binding is invalid: {binding_id}")
         return list(command)
-
-    @staticmethod
-    def _connection(connections: list[dict[str, Any]], connection_id: str) -> dict[str, Any]:
-        for item in connections:
-            if str(item.get("id")) == connection_id:
-                return dict(item)
-        raise ValueError(f"connection not found: {connection_id}")

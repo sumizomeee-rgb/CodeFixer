@@ -16,16 +16,15 @@ def _referenced_executables(loaded: LoadedConfig) -> set[str]:
         if item.get("id")
     }
     references: set[str] = set()
+    current_profile = profiles.get(loaded.config.execution.currentModelId)
+    if current_profile and current_profile.get("executableRef"):
+        references.add(str(current_profile["executableRef"]))
     for project in loaded.config.projects:
         if project.get("enabled", True) is False:
             continue
         source = project.get("modificationSource") or {}
         if source.get("executableRef"):
             references.add(str(source["executableRef"]))
-        for profile_id in (project.get("agents") or {}).values():
-            profile = profiles.get(str(profile_id))
-            if profile and profile.get("executableRef"):
-                references.add(str(profile["executableRef"]))
         for step in (project.get("verification") or {}).get("steps") or []:
             if step.get("executableRef"):
                 references.add(str(step["executableRef"]))
@@ -81,7 +80,7 @@ def inspect_executable_dependencies(loaded: LoadedConfig) -> list[dict[str, Any]
         }
         if not resolved:
             base.update(
-                status="failed" if is_required else "warning",
+                status="failed" if is_required else "inactive",
                 summary=f"{binding_id} 未找到" if is_required else f"{binding_id} 尚未安装（当前未使用）",
                 suggestion=f"安装 {executable or binding_id}，或修正 executableBindings.{binding_id}",
             )
@@ -100,7 +99,7 @@ def inspect_executable_dependencies(loaded: LoadedConfig) -> list[dict[str, Any]
             )
         except (OSError, subprocess.TimeoutExpired) as exc:
             base.update(
-                status="failed" if is_required else "warning",
+                status="failed" if is_required else "inactive",
                 summary=f"{binding_id} 版本检查失败",
                 detail=str(exc),
                 suggestion="确认部署用户可以非交互执行该命令",
@@ -113,7 +112,7 @@ def inspect_executable_dependencies(loaded: LoadedConfig) -> list[dict[str, Any]
         base.update(path=resolved, version=version, detail=output[:500])
         if result.returncode != 0 or version is None:
             base.update(
-                status="failed" if is_required else "warning",
+                status="failed" if is_required else "inactive",
                 summary=f"{binding_id} 无法确认版本",
                 suggestion="检查 versionArgs/versionRegex，并确认命令可正常执行",
             )
@@ -125,8 +124,8 @@ def inspect_executable_dependencies(loaded: LoadedConfig) -> list[dict[str, Any]
             )
         elif not constraint:
             base.update(
-                status="warning",
-                summary=f"{binding_id} {version} 可用，但未锁定最低版本",
+                status="ready",
+                summary=f"{binding_id} {version} 可用",
                 suggestion=f"为 executableBindings.{binding_id} 配置 versionConstraint",
             )
         else:

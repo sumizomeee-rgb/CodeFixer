@@ -16,7 +16,6 @@
     {"id": "opencode", "runtime": "opencode", "executableRef": "opencode-cli", "timeoutSeconds": 1800}
   ],
   "knowledgeProviders": [],
-  "connections": [],
   "executableBindings": {
     "git-cli": {"command": ["git"], "versionArgs": ["--version"], "versionConstraint": null},
     "svn-cli": {"command": ["svn"], "versionArgs": ["--version", "--quiet"], "versionConstraint": null},
@@ -24,6 +23,6 @@
     "codex-cli": {"command": ["codex"], "versionArgs": ["--version"], "versionConstraint": null},
     "opencode-cli": {"command": ["opencode"], "versionArgs": ["--version"], "versionConstraint": null}
   },
-  "pathBindings": {"primary-patches": "patches", "git-materialization": "repositories/git-materialization"},
+  "pathBindings": {"primary-patches": "patches"},
   "projects": []
 }

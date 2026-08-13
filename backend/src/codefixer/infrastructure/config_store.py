@@ -72,11 +72,11 @@ class ConfigStore:
 
     @classmethod
     def _default_local_path(cls, base_path: Path) -> Path:
-        return cls._config_root(base_path) / "local.json"
+        return cls._config_root(base_path).parent / ".local" / "config.json"
 
     @classmethod
     def _default_secrets_path(cls, base_path: Path) -> Path:
-        return cls._config_root(base_path) / "secrets.json"
+        return cls._config_root(base_path).parent / ".local" / "secrets.json"
 
     @property
     def loaded(self) -> LoadedConfig:

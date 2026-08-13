@@ -102,6 +102,7 @@ CodeFixer 的仓库、安装包和部署文档必须自包含：
 - 公开默认配置不得出现开发者盘符、用户名、内网地址或机器绝对路径。
 - 运行所需第三方程序、服务和包必须通过依赖清单、适配器契约与 Preflight 明示。
 - 当前机器的路径和凭据只允许出现在不入 Git 的本地覆盖与 Secret 存储中。
+- 本地覆盖统一放在仓库根目录 `.local/`：非秘密配置为 `.local/config.json`，工单来源 Secret 为 `.local/secrets.json`；整个目录必须被 Git 忽略。
 
 ### 3.9 单一当前模型，独立会话
 
@@ -783,38 +784,29 @@ overwrite: false
 ```yaml
 type: gitlabMr
 id: main-gitlab-mr
-connectionRef: company-gitlab
-projectPath: group/project
-materializationRepositoryRef: git-materialization
+repositoryRef: product-git
 pathMappings:
   - from: "."
     to: "."
 targetBranches:
   - main
   - release/current
-assignee:
-  username: reviewer
-titleMode: latestCommitSubject
-removeSourceBranch: true
-maxTargetConcurrency: 2
+titleTemplate: "[CodeFixer] {task_id}"
+descriptionTemplate: "CodeFixer 自动修复任务 {run_id}。"
 ```
 
 可配置项：
 
-- GitLab connection 引用。
-- GitLab project path/ID。
-- 修改源到 Git 仓库的物化目录引用与路径映射。
+- 本机 Git 仓库路径引用；平台从 `origin` 自动识别 GitLab 服务和项目。
+- 修改源到交付仓库的路径映射。
 - 一个或多个目标分支。
-- MR assignee。
 - MR 标题和描述模板。
-- 合并后是否删除临时分支。
-- 目标分支并发上限。
 
-`connectionRef` 只引用服务端秘密，不保存明文 Token。
+CodeFixer 不保存 GitLab URL、Project Path、Token 或独立 connection。仓库拉取和推送复用部署用户已经配置的 SSH key / Git credential；项目 Preflight 必须验证仓库布局、`origin` 和远端访问。MR 通过 GitLab push options 创建，源分支合并后自动删除。
 
 ### 13.3 Commit 可见性
 
-GitLab API 必须能够解析本任务的 commit SHA。平台在动作前负责：
+GitLab remote 必须能够接收本任务的 commit SHA 和 MR push options。平台在动作前负责：
 
 - 修改源本身是同一 GitLab Git 仓库时，创建并发布受控任务 commit/ref。
 - 修改源是 SVN 或另一个仓库时，只把冻结修改通过 `pathMappings` 物化到配置的 Git 仓库，创建任务 commits 并发布到受控暂存 ref。
@@ -1014,7 +1006,6 @@ execution:
 ticketProviders: []
 agentProfiles: []
 knowledgeProviders: []
-connections: []
 executableBindings:
   git-cli:
     command: ["git"]
@@ -1046,7 +1037,6 @@ executableBindings:
     versionConstraint: null
 pathBindings:
   primary-patches: "./patches"
-  git-materialization: "./repositories/git-materialization"
 projects: []
 ```
 
@@ -1066,9 +1056,9 @@ projects: []
 2. 按 stdout、stderr 的顺序，在首个非空输出中提取第一个 `主版本.次版本[.修订版本[.构建版本]]` 数字串；binding 可用 `versionRegex` 覆盖提取规则，但必须包含命名捕获组 `version`。
 3. `versionConstraint` 只支持 `> >= = <= <` 与逗号连接的 AND 条件，例如 `>=2.40,<3.0`。
 4. 比较时把 2 至 4 段十进制整数补零到 4 段后按数值逐段比较；不把供应商后缀参与比较。
-5. 配置了约束却无法提取或比较版本时检查失败；约束为 `null` 时仍必须成功取得并记录版本，但只产生“未锁最低版本”的 warning。
+5. 配置了约束却无法提取或比较版本时检查失败；约束为 `null` 时仍必须成功取得并记录版本，只在高级详情中提示“未设置最低版本”，不降低健康状态。
 
-每个正式发布版本必须把其生产启用依赖的已验证最低版本写入默认配置；上例中的 `null` 只表示当前 SPEC 阶段尚未冻结实现版本，不允许发布流程忽略该 warning。
+正式发布可以为生产启用依赖写入已验证最低版本；未设置约束本身不是故障。黄灯只表示能力或覆盖范围真实降级，未使用的可选命令显示为灰色，当前全局模型对应的 CLI 必须按 required 检查。
 
 `execution.mode`：
 

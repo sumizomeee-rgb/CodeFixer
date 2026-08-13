@@ -583,7 +583,6 @@ config/examples/
 repositoryRef
 outputDirectoryRef
 executableRef
-connectionRef
 ```
 
 业务项目配置不得直接写机器盘符。

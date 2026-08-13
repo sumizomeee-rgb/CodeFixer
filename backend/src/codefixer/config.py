@@ -37,7 +37,6 @@ class AppConfig(BaseModel):
     ticketProviders: list[dict[str, Any]] = []
     agentProfiles: list[dict[str, Any]] = []
     knowledgeProviders: list[dict[str, Any]] = []
-    connections: list[dict[str, Any]] = []
     executableBindings: dict[str, dict[str, Any]] = {}
     pathBindings: dict[str, str] = {}
     projects: list[dict[str, Any]] = []
@@ -87,13 +86,14 @@ def load_config(base_config_path: Path | None = None) -> LoadedConfig:
     default_path = base_config_path or Path(os.environ.get("CODEFIXER_CONFIG", repo_root / "config/defaults/codefixer.json"))
     default_path = default_path.resolve()
     merged = _read_json(default_path)
+    machine_root = default_path.parent.parent.parent if default_path.parent.name == "defaults" else default_path.parent
     local_path_raw = os.environ.get("CODEFIXER_LOCAL_CONFIG")
-    local_path = Path(local_path_raw).resolve() if local_path_raw else (repo_root / "config/local.json").resolve()
+    local_path = Path(local_path_raw).resolve() if local_path_raw else (machine_root / ".local/config.json").resolve()
     if local_path.exists():
         merged = _deep_merge(merged, _read_json(local_path))
     merged = _normalize_legacy_fields(merged)
     secret_path_raw = os.environ.get("CODEFIXER_SECRET_CONFIG")
-    secret_path = Path(secret_path_raw).resolve() if secret_path_raw else (repo_root / "config/secrets.json").resolve()
+    secret_path = Path(secret_path_raw).resolve() if secret_path_raw else (machine_root / ".local/secrets.json").resolve()
     config = AppConfig.model_validate(merged)
     data_root_override = os.environ.get("CODEFIXER_DATA_ROOT")
     raw_data_root = Path(data_root_override or config.storage.dataRoot)

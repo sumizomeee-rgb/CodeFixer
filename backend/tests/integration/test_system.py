@@ -41,7 +41,7 @@ def test_health_and_readiness__when_phase0_runtime_is_valid(tmp_path: Path):
         assert "CodeFixer" in page.text
 
 
-def test_readiness__missing_unused_dependency_is_warning(tmp_path: Path):
+def test_readiness__missing_unused_dependency_is_inactive(tmp_path: Path):
     loaded = _loaded(tmp_path)
     loaded.config.executableBindings = {
         "optional-cli": {"command": ["codefixer-command-that-does-not-exist"]}
@@ -51,5 +51,5 @@ def test_readiness__missing_unused_dependency_is_warning(tmp_path: Path):
 
     check = next(item for item in payload["checks"] if item["id"] == "dependency.optional-cli")
     assert payload["ready"] is True
-    assert payload["status"] == "warning"
-    assert check["status"] == "warning"
+    assert payload["status"] == "ready"
+    assert check["status"] == "inactive"

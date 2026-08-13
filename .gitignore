@@ -16,6 +16,7 @@ frontend/playwright-report/
 
 # Runtime
 /data/
+.local/
 config/local.*
 config/secrets.*
 *.db

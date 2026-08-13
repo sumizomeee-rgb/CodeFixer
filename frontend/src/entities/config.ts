@@ -5,11 +5,10 @@ export type RoutingOperator = 'eq' | 'neq' | 'contains' | 'in' | 'exists'
 export type ExecutableBinding = { command?: string[]; versionArgs?: string[]; versionConstraint?: string | null; versionRegex?: string }
 export type AgentProfileConfig = { id:string; runtime:AgentRuntime; executableRef:string; model?:string; effort?:string; timeoutSeconds?:number; maxBudgetUsd?:number; extraArgs?:string[] }
 export type TicketProviderConfig = Record<string, unknown> & { id:string; type:'redmine'|'tapd'; enabled?:boolean; pollIntervalSeconds?:number }
-export type ConnectionConfig = { id:string; type:'gitlab'; baseUrl:string; tokenSecretRef:string }
 export type RoutingRule = { id:string; providerRef:string; priority:number; catchAll?:boolean; conditions?:Array<{field:string;operator:RoutingOperator;value?:unknown}> }
 export type VerificationStepConfig = { id:string; executableRef:string; args:string[]; workingDirectory?:string; timeoutSeconds?:number; required?:boolean }
 export type PatchActionConfig = { id:string; type:'patch'; outputDirectoryRef:string; filenameTemplate?:string; overwrite?:boolean }
-export type GitLabMrActionConfig = { id:string; type:'gitlabMr'; connectionRef:string; projectPath:string; materializationRepositoryRef:string; gitExecutableRef?:string; targetBranches:string[]; pathMappings?:Array<{from:string;to:string}>; titleTemplate?:string; descriptionTemplate?:string }
+export type GitLabMrActionConfig = { id:string; type:'gitlabMr'; repositoryRef:string; gitExecutableRef?:string; targetBranches:string[]; pathMappings?:Array<{from:string;to:string}>; titleTemplate?:string; descriptionTemplate?:string }
 export type FinalActionConfig = PatchActionConfig | GitLabMrActionConfig
 
 export type AppConfig = {
@@ -21,7 +20,6 @@ export type AppConfig = {
   executableBindings:Record<string,ExecutableBinding>
   ticketProviders:TicketProviderConfig[]
   agentProfiles:AgentProfileConfig[]
-  connections:ConnectionConfig[]
   knowledgeProviders:Array<Record<string,unknown>&{id?:string}>
   projects:ProjectConfig[]
 }
@@ -35,5 +33,5 @@ export type ProjectConfig = {
 export type SettingsResponse={config:AppConfig;secrets:Record<string,{configured:boolean}>;etag:string}
 export type PreflightCheck={id:string;status:'ready'|'warning'|'failed';summary:string;suggestion?:string}
 export type PreflightResult={projectId:string;ready:boolean;status:'ready'|'not_ready';checks:PreflightCheck[]}
-export type ReadinessCheck={id:string;status:'ready'|'warning'|'failed';summary:string;detail?:unknown;suggestion?:string;dependencyId?:string;required?:boolean;command?:string;path?:string;version?:string|null}
+export type ReadinessCheck={id:string;status:'ready'|'warning'|'failed'|'inactive';summary:string;detail?:unknown;suggestion?:string;dependencyId?:string;required?:boolean;command?:string;path?:string;version?:string|null}
 export type ReadinessResponse={ready:boolean;status:'ready'|'warning'|'not_ready';checks:ReadinessCheck[];environment:string}

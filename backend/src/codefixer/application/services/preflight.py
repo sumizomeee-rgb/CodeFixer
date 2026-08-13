@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import os
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,49 @@ def resolve_path_binding(loaded: LoadedConfig, binding_id: str) -> Path | None:
         return None
     path = Path(raw)
     return path.resolve() if path.is_absolute() else (loaded.data_root / path).resolve()
+
+
+def _git_delivery_health(repository: Path, command: list[str]) -> tuple[bool, str]:
+    try:
+        process_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
+        layout = subprocess.run(
+            [*command, "rev-parse", "--is-inside-work-tree"],
+            cwd=repository,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=process_env,
+        )
+        if layout.returncode != 0 or layout.stdout.strip() != "true":
+            return False, "所选路径不是 Git 工作区"
+        remote = subprocess.run(
+            [*command, "remote", "get-url", "origin"],
+            cwd=repository,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            env=process_env,
+        )
+        remote_url = remote.stdout.strip()
+        if remote.returncode != 0 or not remote_url:
+            return False, "仓库没有可用的 origin remote"
+        probe = subprocess.run(
+            [*command, "ls-remote", "--heads", "origin"],
+            cwd=repository,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            check=False,
+            env=process_env,
+        )
+        if probe.returncode != 0:
+            reason = probe.stderr.strip().splitlines()[-1] if probe.stderr.strip() else "远端访问失败"
+            return False, reason
+        return True, f"GitLab remote 可访问：{remote_url}"
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return False, f"GitLab remote 检查失败：{exc}"
 
 
 def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict[str, Any]:
@@ -96,9 +141,15 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
                     output_ok = False
             checks.append(_check(f"delivery.{index}.patch_output", output_ok, f"Patch 输出：{output}" if output else "Patch outputDirectoryRef 无法解析"))
         if action_type == "gitlabMr":
-            connection_ref = str(action.get("connectionRef", ""))
-            connections = {str(item.get("id")) for item in loaded.config.connections if item.get("id")}
-            checks.append(_check(f"delivery.{index}.gitlab_connection", connection_ref in connections, f"GitLab connection：{connection_ref or '未配置'}"))
+            repository_ref = str(action.get("repositoryRef", ""))
+            repository = resolve_path_binding(loaded, repository_ref) if repository_ref else None
+            git_binding = loaded.config.executableBindings.get(str(action.get("gitExecutableRef", "git-cli")), {})
+            git_command = git_binding.get("command") if isinstance(git_binding, dict) else None
+            if repository is None or not repository.exists() or not isinstance(git_command, list) or not git_command:
+                healthy, summary = False, "请选择存在的本地 Git 仓库"
+            else:
+                healthy, summary = _git_delivery_health(repository, [str(item) for item in git_command])
+            checks.append(_check(f"delivery.{index}.gitlab_repository", healthy, summary, "检查本地路径、origin 与当前机器的 Git 认证" if not healthy else None))
             targets = action.get("targetBranches") or []
             checks.append(_check(f"delivery.{index}.targets", bool(targets), f"目标分支：{len(targets)} 个" if targets else "未配置目标分支"))
     failed = [item for item in checks if item["status"] == "failed"]

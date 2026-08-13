@@ -16,6 +16,8 @@ class MaterializedTarget:
     source_branch: str
     delivery_commit: str
     target_commit: str
+    merge_request_iid: str
+    merge_request_url: str
 
 
 def safe_branch_component(value: str) -> str:
@@ -60,6 +62,34 @@ class GitDeliveryMaterializer(CliSourceBase):
 
     def refresh(self) -> None:
         self._run(["fetch", "--prune", self.remote], cwd=self.repository, timeout=600)
+
+    def remote_url(self) -> str:
+        value = self._run(["remote", "get-url", self.remote], cwd=self.repository).stdout.strip()
+        if not value:
+            raise SourceCommandError(f"Git remote has no URL: {self.remote}")
+        return value
+
+    def remote_branch_commit(self, branch: str) -> str | None:
+        result = self._run(
+            ["ls-remote", "--heads", self.remote, f"refs/heads/{branch}"],
+            cwd=self.repository,
+            allow_failure=True,
+            timeout=60,
+        )
+        if result.exit_code != 0 or not result.stdout.strip():
+            return None
+        return result.stdout.split()[0]
+
+    @staticmethod
+    def _project_url(remote_url: str) -> str:
+        value = remote_url.removesuffix(".git")
+        scp_match = re.fullmatch(r"[^@]+@([^:]+):(.+)", value)
+        if scp_match:
+            return f"https://{scp_match.group(1)}/{scp_match.group(2)}"
+        ssh_match = re.fullmatch(r"ssh://(?:[^@]+@)?([^/]+)/(.+)", value)
+        if ssh_match:
+            return f"https://{ssh_match.group(1)}/{ssh_match.group(2)}"
+        return value
 
     def commit_exists(self, commit: str) -> bool:
         result = self._run(["cat-file", "-e", f"{commit}^{{commit}}"], cwd=self.repository, allow_failure=True)
@@ -128,14 +158,48 @@ class GitDeliveryMaterializer(CliSourceBase):
         finally:
             self._run(["worktree", "remove", "--force", str(worktree)], cwd=self.repository, allow_failure=True)
 
-    def materialize_target(self, *, delivery_commit: str, target_branch: str, source_branch: str, worktree: Path) -> MaterializedTarget:
+    def materialize_target(self, *, delivery_commit: str, target_branch: str, source_branch: str, worktree: Path, title: str, description: str) -> MaterializedTarget:
         remote_target = f"{self.remote}/{target_branch}"
         self._run(["rev-parse", "--verify", remote_target], cwd=self.repository)
         self._run(["worktree", "add", "--detach", str(worktree), remote_target], cwd=self.repository)
         try:
             self._run(["-c", "user.name=CodeFixer", "-c", "user.email=codefixer@local", "cherry-pick", delivery_commit], cwd=worktree)
             target_commit = self._run(["rev-parse", "HEAD"], cwd=worktree).stdout.strip()
-            self._run(["push", self.remote, f"HEAD:refs/heads/{source_branch}"], cwd=worktree, timeout=600)
-            return MaterializedTarget(target_branch, source_branch, delivery_commit, target_commit)
+            push = self._run(
+                [
+                    "push",
+                    self.remote,
+                    f"HEAD:refs/heads/{source_branch}",
+                    "-o",
+                    "merge_request.create",
+                    "-o",
+                    f"merge_request.target={target_branch}",
+                    "-o",
+                    "merge_request.remove_source_branch",
+                    "-o",
+                    f"merge_request.title={title}",
+                    "-o",
+                    f"merge_request.description={description.replace(chr(10), ' ')}",
+                ],
+                cwd=worktree,
+                timeout=600,
+            )
+            output = f"{push.stdout}\n{push.stderr}"
+            match = re.search(r"https?://\S+/-/merge_requests/(?P<iid>\d+)", output)
+            project_url = self._project_url(self.remote_url())
+            merge_request_iid = match.group("iid") if match else source_branch
+            merge_request_url = (
+                match.group(0).rstrip(".,)")
+                if match
+                else f"{project_url}/-/merge_requests?scope=all&state=opened&source_branch={source_branch}"
+            )
+            return MaterializedTarget(
+                target_branch,
+                source_branch,
+                delivery_commit,
+                target_commit,
+                merge_request_iid,
+                merge_request_url,
+            )
         finally:
             self._run(["worktree", "remove", "--force", str(worktree)], cwd=self.repository, allow_failure=True)

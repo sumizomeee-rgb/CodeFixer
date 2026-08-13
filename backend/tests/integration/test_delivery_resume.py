@@ -15,7 +15,7 @@ from codefixer.orchestration.recovery import RecoveryService
 
 def _config(tmp_path: Path) -> tuple[Path, dict[str, object]]:
     config_path=tmp_path/"config/defaults/codefixer.json";config_path.parent.mkdir(parents=True);project={"id":"demo","name":"Demo","finalActions":[{"id":"primary-patch","type":"patch","outputDirectoryRef":"patches","filenameTemplate":"{task_id}-{run_id}.patch"}]}
-    config_path.write_text(json.dumps({"schemaVersion":1,"server":{"host":"127.0.0.1","port":9522},"storage":{"dataRoot":"../../data"},"execution":{"mode":"automatic","maxConcurrentTasks":1,"maxRepairAttempts":3},"ticketProviders":[],"agentProfiles":[],"knowledgeProviders":[],"connections":[],"executableBindings":{},"pathBindings":{"patches":"patches"},"projects":[project]},indent=2),encoding="utf-8")
+    config_path.write_text(json.dumps({"schemaVersion":1,"server":{"host":"127.0.0.1","port":9522},"storage":{"dataRoot":"../../data"},"execution":{"mode":"automatic","maxConcurrentTasks":1,"maxRepairAttempts":3},"ticketProviders":[],"agentProfiles":[],"knowledgeProviders":[],"executableBindings":{},"pathBindings":{"patches":"patches"},"projects":[project]},indent=2),encoding="utf-8")
     return config_path,project
 
 

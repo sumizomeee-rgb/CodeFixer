@@ -11,7 +11,6 @@
     "ticketProviders": {"type": "array"},
     "agentProfiles": {"type": "array", "items": {"type": "object", "required": ["id", "runtime", "executableRef"], "properties": {"id": {"type": "string", "minLength": 1}, "runtime": {"enum": ["claudeCode", "codex", "opencode"]}, "executableRef": {"type": "string", "minLength": 1}, "model": {"type": ["string", "null"]}, "effort": {"type": ["string", "null"]}, "timeoutSeconds": {"type": "integer", "minimum": 1}, "maxBudgetUsd": {"type": ["number", "null"], "minimum": 0}, "extraArgs": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}},
     "knowledgeProviders": {"type": "array"},
-    "connections": {"type": "array"},
     "executableBindings": {"type": "object"},
     "pathBindings": {"type": "object", "additionalProperties": {"type": "string"}},
     "projects": {"type": "array"}
