@@ -18,8 +18,23 @@ function Get-CodeFixerProcesses {
 $targets = Get-CodeFixerProcesses
 if ($targets.Count -gt 0) {
     Write-Host "[CodeFixer] Stopping existing instance..."
-    foreach ($process in $targets) {
-        & taskkill.exe /PID $process.ProcessId /T /F 2>$null | Out-Null
+
+    # run.py starts `python -m codefixer`. taskkill /T already terminates the whole
+    # child tree, so only kill target processes whose parent is not another target.
+    # This also avoids a harmless race where the child PID disappears before its
+    # own taskkill call and Windows reports "process not found".
+    $targetIds = @($targets | ForEach-Object { [int]$_.ProcessId })
+    $roots = @($targets | Where-Object { $targetIds -notcontains [int]$_.ParentProcessId })
+
+    foreach ($process in $roots) {
+        $pidToStop = [int]$process.ProcessId
+        if (Get-Process -Id $pidToStop -ErrorAction SilentlyContinue) {
+            # Redirect inside cmd.exe so Windows PowerShell 5.1 does not promote
+            # taskkill's stderr into NativeCommandError under ErrorAction=Stop.
+            # A disappearing PID is success for restart purposes; final liveness
+            # is checked below instead of trusting one taskkill exit code.
+            & $env:ComSpec /d /c "taskkill.exe /PID $pidToStop /T /F >nul 2>&1"
+        }
     }
 
     $deadline = [DateTime]::UtcNow.AddSeconds(5)
