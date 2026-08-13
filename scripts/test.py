@@ -29,12 +29,26 @@ def npm_command() -> str:
     return npm
 
 
+def validate_windows_entry_scripts() -> None:
+    paths = [ROOT / "start.bat", *sorted((ROOT / "scripts").glob("*.ps1"))]
+    offenders = [
+        str(path.relative_to(ROOT))
+        for path in paths
+        if path.is_file() and any(byte > 0x7F for byte in path.read_bytes())
+    ]
+    if offenders:
+        joined = ", ".join(offenders)
+        raise RuntimeError(
+            "Windows entry scripts must remain ASCII-only for Windows PowerShell 5.1 compatibility: " + joined
+        )
+
+
 def wait_ready(url: str, timeout: float = 30) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=1) as response:
-                if b'"ready":true' in response.read().replace(b" ", b""):
+                if b'\"ready\":true' in response.read().replace(b" ", b""):
                     return
         except Exception:
             pass
@@ -62,6 +76,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--all", action="store_true", help="include browser component + same-origin E2E/visual tests")
     args = parser.parse_args()
+    validate_windows_entry_scripts()
     if not VENV_PY.exists() or not (FRONTEND / "node_modules").is_dir():
         raise SystemExit("Project dependencies missing. Run scripts/bootstrap.ps1 or scripts/bootstrap.sh")
     probe = subprocess.run(

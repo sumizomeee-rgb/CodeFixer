@@ -9,4 +9,4 @@ foreach ($candidate in @("python3.12", "python3", "python")) {
     & $candidate -c "import sys; assert sys.version_info >= (3,12) and sys.maxsize > 2**32" 2>$null
     if ($LASTEXITCODE -eq 0) { & $candidate scripts/bootstrap.py @args; exit $LASTEXITCODE }
 }
-throw "CodeFixer 需要 64 位 CPython 3.12+。请先安装，再重新运行 bootstrap.ps1。"
+throw "CodeFixer requires 64-bit CPython 3.12+. Install it and rerun bootstrap.ps1."
