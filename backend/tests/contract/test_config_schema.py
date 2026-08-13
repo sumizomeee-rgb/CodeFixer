@@ -48,6 +48,13 @@ def test_server_config_contract__accepts_new_project_sources_and_actions():
                 "deniedRoots": ["generated"],
                 "allowedExtensions": [".py"],
             },
+            "deliveryLog": {
+                "technologyTag": "Python",
+                "branchLabel": "主干",
+                "versionSource": "ticketFixVersion",
+                "versionFallback": "v1.0",
+                "submitterName": "Tester",
+            },
             "finalActions": [
                 {"id": "patch", "type": "patch", "outputDirectory": "D:/patches"},
                 {"id": "pr", "type": "githubPr", "targetBranches": ["main"]},

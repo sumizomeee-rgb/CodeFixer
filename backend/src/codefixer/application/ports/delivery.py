@@ -15,6 +15,10 @@ class FrozenDeliveryContext:
     patch_path: Path
     patch_sha256: str
     manifest_path: Path
+    delivery_metadata_path: Path
+    commit_subject: str
+    patch_filename: str
+    ticket_key: str
 
 
 @dataclass(frozen=True)

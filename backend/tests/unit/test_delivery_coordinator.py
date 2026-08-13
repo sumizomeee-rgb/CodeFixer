@@ -49,6 +49,8 @@ def _context(tmp_path: Path) -> FrozenDeliveryContext:
     patch_path.write_bytes(b"frozen patch\n")
     manifest_path = tmp_path / "change-manifest.json"
     manifest_path.write_text("{}", encoding="utf-8")
+    metadata_path = tmp_path / "delivery-metadata.json"
+    metadata_path.write_text("{}", encoding="utf-8")
     return FrozenDeliveryContext(
         task_id="task",
         run_id="run",
@@ -58,6 +60,10 @@ def _context(tmp_path: Path) -> FrozenDeliveryContext:
         patch_path=patch_path,
         patch_sha256=hashlib.sha256(patch_path.read_bytes()).hexdigest(),
         manifest_path=manifest_path,
+        delivery_metadata_path=metadata_path,
+        commit_subject="fix：【Code】【#1】【默认】【v1】模块 - 修复  提交人：测试",
+        patch_filename="fix-1.patch",
+        ticket_key="1",
     )
 
 

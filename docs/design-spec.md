@@ -9,7 +9,7 @@
 
 ### 1.1 一句话定位
 
-CodeFixer 是一个通用的 Bug 自动修复与交付平台：它持续接收外部缺陷工单，先利用独立的定位源反查真实实现，再在唯一的本机修改工作区完成修复、验证与独立审查，最后按仓库能力生成 Patch、GitLab MR 和/或 GitHub PR。
+CodeFixer 是一个通用的 Bug 自动修复与交付平台：它持续接收外部缺陷工单，先利用独立的定位源反查真实实现，再在唯一的本机修改工作区完成修复、验证与独立审查，最后按仓库能力生成 Patch、推送可供人工 Cherry-pick 的 GitLab Commit 和/或 GitHub PR。
 
 CodeFixer 不是某个业务项目的专用脚本，也不是一个把工单和源码拼成大 Prompt 的包装器。平台负责冻结输入、隔离工作区、控制权限、编排阶段、验证产物、记录证据和执行交付；Agent 负责阅读任务档案、自主调查和修改代码。
 
@@ -26,8 +26,8 @@ CodeFixer 不是某个业务项目的专用脚本，也不是一个把工单和�
 
 第一版完成后，用户应能：
 
-- 配置一个或多个工单来源。
-- 配置多个项目；每个项目分别定义一个定位源、一个本机修改工作区和一个或多个最终动作。
+- 在新增流水线时配置或复用一个或多个工单接入。
+- 配置多条流水线；每条流水线分别定义一个工单入口、一个定位源、一个本机修改工作区、验证策略和一个或多个最终动作。
 - 选择“全自动”或“待我开始”。
 - 在系统设置中只选择一个当前模型，由所有 LLM 阶段统一使用。
 - 让多个任务在资源上限内并发运行。
@@ -46,19 +46,20 @@ CodeFixer 不是某个业务项目的专用脚本，也不是一个把工单和�
 | 管理形态 | Web 管理界面 |
 | 默认服务端口 | `9522`，Web 与 API 同源 |
 | 执行模式 | 全自动 / 待我开始 |
-| 当前模型 | 全局只选择一个 `execution.currentModelId`；项目和阶段都不单独选择模型 |
+| 当前模型 | 全局只选择一个 `execution.currentModelId`；流水线和阶段都不单独选择模型 |
 | 模型生效范围 | `scope_discovery`、`discovery`、`no_change_verify`、`repair`、`review` 等所有 LLM 调用统一使用当前模型；各阶段仍保持独立会话 |
 | 模型切换 | Worker 领取 TaskRun 并进入 `prepare` 时解析并冻结模型；排队前和 `awaiting_start` 阶段不冻结 |
 | 手动启动语义 | 点击一次开始后，任务自动执行完整流程，不逐阶段等待审批 |
-| 项目输入 | Bug 反馈源、定位源、本机修改工作区是三个独立概念，必须分别配置 |
+| 流水线输入 | Bug 反馈源、定位源、本机修改工作区是三个独立概念，必须在同一条流水线内分别配置 |
+| 流水线与任务 | 全部流水线共用一个全局任务账本；流水线是任务的绑定与筛选维度，不创建第二套任务列表 |
 | Bug 与修改工作区 | 一个 Bug 任务必须且只能绑定一个本机修改工作区；Agent 不得静默切换 |
 | 仓库类型 | 用户只选本机目录；平台自动识别 SVN、GitLab Git、GitHub Git 或其他 Git，不要求手选类型 |
 | 最终动作 | 一个任务可以配置一个或多个最终动作 |
-| 最终动作能力 | `patch` 对全部修改工作区可用；`gitlabMr` 仅 GitLab Git 可用；`githubPr` 仅 GitHub Git 可用 |
-| GitLab MR 类型 | 普通 MR，不创建 Draft MR |
-| 多目标分支 | 一个 `gitlabMr` / `githubPr` 动作可向多个目标分支分别创建 MR/PR |
-| MR 失败 | 任意必需 MR 目标失败，整个任务失败 |
-| GitHub PR | 普通 PR；行为和状态契约与 `gitlabMr` 对齐，但只在 GitHub 修改工作区上开放 |
+| 最终动作能力 | `patch` 对全部修改工作区可用；`gitlabPush` 仅 GitLab Git 可用；`githubPr` 仅 GitHub Git 可用 |
+| GitLab 交付 | 平台只推送受控任务分支并返回 Commit URL；用户在 GitLab Web 手动 Cherry-pick，不自动创建 MR |
+| GitHub PR | 普通 PR，只在 GitHub 修改工作区上开放；它仍有自己的目标分支和 PR 状态契约 |
+| 交付日志 | TAPD Bug 使用 `fix/#B`，TAPD 其他单使用 `feat/#S`，Redmine 全部使用 `fix/#`；LLM 只生成模块名和修改摘要 |
+| 任务结论 | 每个终态任务都有简洁结论；已修改任务另外提供二级交付结果弹窗和仓库相对修改路径清单 |
 | 反查失败 | 任务失败并给出原因，不进入人工文件勾选等待态 |
 | Bug 已不存在 | 只有证据充分时才健康完成为 `no_change` |
 | LLM 并发 | 全局 LLM 调用池默认 4；所有 Runtime 和所有任务共享，非 LLM 阶段不占槽 |
@@ -73,7 +74,7 @@ CodeFixer 不是某个业务项目的专用脚本，也不是一个把工单和�
 
 ### 3.2 Agent 自主调查，平台做确定性门禁
 
-Discovery Agent 自己读取工单档案和项目配置的只读定位源，自主搜索与反查。平台不替 Agent 决定文件清单，但会检查工单中的显式路径、堆栈符号、错误码、模块名、版本、附件和关联提交是否得到处理。定位结论必须显式映射到项目唯一的本机修改工作区，不能把定位源偷换成修改目录。
+Discovery Agent 自己读取工单档案和流水线配置的只读定位源，自主搜索与反查。平台不替 Agent 决定文件清单，但会检查工单中的显式路径、堆栈符号、错误码、模块名、版本、附件和关联提交是否得到处理。定位结论必须显式映射到流水线唯一的本机修改工作区，不能把定位源偷换成修改目录。
 
 ### 3.3 调查结论不是修改授权
 
@@ -85,7 +86,7 @@ Discovery 产物只是第二阶段的定位线索。Repair Agent 必须在本次
 
 ### 3.5 所有最终动作消费同一份冻结修改
 
-Patch、GitLab MR 和 GitHub PR 必须从同一份经过验证和 Review 的不可变修改快照生成，禁止各自重新读取一个可能已经变化的工作区。
+Patch、GitLab Push 和 GitHub PR 必须从同一份经过验证和 Review 的不可变修改快照生成，禁止各自重新读取一个可能已经变化的工作区。
 
 ### 3.6 外部副作用由平台执行
 
@@ -110,11 +111,11 @@ CodeFixer 的仓库、安装包和部署文档必须自包含：
 
 ### 3.9 单一当前模型，独立会话
 
-模型选择属于全局运行设置，不属于 Project，也不属于某个阶段。用户只选择一个“当前模型”；平台把该选择解析为具体 Agent Runtime、模型 ID 和可执行命令。
+模型选择属于全局运行设置，不属于 Pipeline，也不属于某个阶段。用户只选择一个“当前模型”；平台把该选择解析为具体 Agent Runtime、模型 ID 和可执行命令。
 
 同一个 TaskRun 中所有需要 LLM 的阶段使用同一个已解析模型，但每个阶段仍分别启动独立会话、分别记录 usage、费用、耗时和失败原因。独立会话用于职责隔离与审计，不意味着用户需要为不同阶段配置不同模型。
 
-Project、Task、Stage 的 UI 和公共配置不得重新引入“为 Scope / Discovery / Repair / Review 分别选模型”的交互。
+Pipeline、Task、Stage 的 UI 和公共配置不得重新引入“为 Scope / Discovery / Repair / Review 分别选模型”的交互。
 
 ## 4. 核心领域模型
 
@@ -132,29 +133,44 @@ Project、Task、Stage 的 UI 和公共配置不得重新引入“为 Scope / Di
 
 工单平台的地址、工作区和认证必须在“添加/编辑 Bug 反馈源”交互内一次完成：Redmine 直接填写服务地址与 API Token；TAPD 直接填写工作区与账号密码或 Token。Secret 只写入当前机器 `.local/secrets.json`，界面不暴露 `SecretRef`、凭据名称或独立凭据管理卡片，也不回显真实值。
 
-### 4.2 Project
+### 4.2 Pipeline
 
-项目是一个可执行策略集合，包含：
+流水线是 CodeFixer 的一等可执行策略集合。它把原本分散的来源与动作组装成一条可理解、可体检、可运行的修复线路：
 
-- 带优先级的工单路由规则。
+```text
+TicketProvider + 路由范围
+  → LocalizationSource
+  → ModificationWorkspace
+  → Verification
+  → FinalAction[]
+```
+
+每条流水线包含：
+
+- 名称、稳定 ID、启用状态和配置版本。
+- 唯一工单入口：一个 `providerRef` 与带优先级的工单匹配规则。
 - 唯一 `LocalizationSource`。
 - 唯一 `ModificationWorkspace`。
 - 允许修改的路径与文件类型。
 - 验证命令和超时。
 - 修复循环上限。
 - 一个或多个 `FinalAction`。
-- 并发与共享资源限制。
+- 可选并发与共享资源限制。
 
-Project **不配置 Agent profile 或阶段模型**。范围调查、正式定位、Repair、No-change Verify 和 Review 等 LLM 阶段统一使用系统全局当前模型；它们之间的职责隔离通过独立会话、权限和入口协议实现，而不是通过项目级模型选择实现。
+`TicketProvider` 是当前部署机上的可复用接入连接，不被某条流水线私有。多条流水线可以引用同一个 TAPD/Redmine 连接并用不同匹配范围分流；每张工单最终必须且只能绑定一条已启用流水线。流水线也可以引用相同的定位源或物理修改工作区，但同一物理工作区仍按规范化仓库身份共享 `BaselineCohort`、短时刷新锁和必要的独占 lease。
 
-项目配置不包含任何 CodeFixer 核心代码无法理解的隐式约定。业务特定规则应写入项目策略文档或适配器配置。
+Pipeline **不配置 Agent profile 或阶段模型**。范围调查、正式定位、Repair、No-change Verify 和 Review 等 LLM 阶段统一使用系统全局当前模型；它们之间的职责隔离通过独立会话、权限和入口协议实现，而不是通过流水线级模型选择实现。
+
+流水线配置不包含任何 CodeFixer 核心代码无法理解的隐式约定。业务特定规则应写入流水线策略文档或适配器配置。
 
 路由规则必须产生唯一结果：
 
-- 没有项目匹配时，任务以 `project_not_found` 失败。
-- 多个项目匹配时，选择数值最高的优先级。
-- 多个最高优先级规则并列时，任务以 `project_ambiguous` 失败。
-- 用户修正项目绑定后必须创建新 TaskRun，Agent 无权改变绑定。
+- 没有流水线匹配时，任务以 `pipeline_not_found` 失败。
+- 多条流水线匹配时，选择数值最高的优先级。
+- 多条最高优先级规则并列时，任务以 `pipeline_ambiguous` 失败。
+- 明显冲突（例如同一反馈源存在多条同优先级 catch-all）必须在流水线保存或体检时阻止；只有依赖实际工单字段才能发现的歧义才允许在收录时失败。
+- 用户修正流水线绑定后必须创建新 TaskRun，Agent 无权改变绑定。
+- 停用流水线只阻止新工单进入；已经排队或运行的 TaskRun 继续使用自己的冻结快照完成或明确失败。
 
 ### 4.3 LocalizationSource
 
@@ -162,7 +178,7 @@ Project **不配置 Agent profile 或阶段模型**。范围调查、正式定�
 
 - 定位源可以是代码搜索目录、只读仓库、索引或知识服务。
 - `scope_discovery` 与 `discovery` 只在定位源授权范围内自主调查并输出证据。
-- 定位结果必须给出到 `ModificationWorkspace` 的确定性映射；无法映射、映射到多个工作区或证据指向另一个项目时，以 `source_mismatch` 或 `discovery_failed` 结束。
+- 定位结果必须给出到 `ModificationWorkspace` 的确定性映射；无法映射、映射到多个工作区或证据指向另一条流水线时，以 `source_mismatch` 或 `discovery_failed` 结束。
 - 即使定位源与修改工作区碰巧指向同一目录，配置、权限和阶段职责仍分别表达，平台不得把两个字段合并成一个“代码位置”。
 
 ### 4.4 ModificationWorkspace
@@ -174,7 +190,7 @@ Project **不配置 Agent profile 或阶段模型**。范围调查、正式定�
 3. 非 Git 时用 `svn info` 判断是否为 SVN working copy，标记 `svn`。
 4. 都无法识别时保存失败，展示实际探测命令、退出摘要和修复建议。
 
-识别结果包含 `vcsKind=git|svn`、`hostingKind=gitlab|github|other|none`、仓库根路径和 remote 元数据。它是平台探测事实，不是用户手填的“代码类型”。内部 CLI binding 可由部署配置覆盖，但日常项目 UI 不展示 `pathBindings`、`repositoryRef` 或 `executableRef`。
+识别结果包含 `vcsKind=git|svn`、`hostingKind=gitlab|github|other|none`、仓库根路径、remote 元数据和经探测确认的 `webBaseUrl`。`webBaseUrl` 必须保留自建服务真实的 HTTP/HTTPS scheme，不能因为 `origin` 是 SSH 就默认拼成 HTTPS；它用于生成 Commit、分支和 PR 的 Web 链接。识别结果是平台探测事实，不是用户手填的“代码类型”。内部 CLI binding 可由部署配置覆盖，但日常流水线 UI 不展示 `pathBindings`、`repositoryRef` 或 `executableRef`。
 
 托管识别结果按规范化 remote URL 缓存在本机配置中，remote 改变即失效并重新探测。自建服务无法确定、两个探测都成功或网络受限时标记 `gitOther` / `ambiguous`，只开放 Patch，并在工作区卡片显示实际探测证据与重试按钮；不要求用户另填 GitLab/GitHub connection。
 
@@ -185,27 +201,27 @@ Project **不配置 Agent profile 或阶段模型**。范围调查、正式定�
 最终动作消费冻结修改快照：
 
 - `patch`：全部已识别修改工作区均可用，用户直接选择本机输出目录。
-- `gitlabMr`：仅 `hostingKind=gitlab` 可选，复用修改工作区与 `origin`，用户选择一个或多个目标分支。
+- `gitlabPush`：仅 `hostingKind=gitlab` 可选，复用修改工作区与 `origin`，推送平台生成的受控任务分支并返回 Commit URL，不配置目标分支。
 - `githubPr`：仅 `hostingKind=github` 可选，复用修改工作区与 `origin`，用户选择一个或多个目标分支。
 
 SVN 与 `gitOther` 不允许通过额外选择一个 Git 仓库绕过能力约束；修改工作区和交付仓库始终是同一个物理来源。动作不可用时 UI 应说明识别结果和原因，而不是继续展示必然失败的表单。
 
 配置中的所有已启用最终动作都是必需动作。任意动作失败，任务失败；已经成功的外部交付不会被隐藏或回滚。
 
-“必需动作”只指 Project `finalActions` 中由用户配置的动作。平台自动创建的 `__fallback_patch__` 是恢复动作，不进入必需动作成功计数，也不参与“任一必需动作失败”的递归判断。
+“必需动作”只指 Pipeline `finalActions` 中由用户配置的动作。平台自动创建的 `__fallback_patch__` 是恢复动作，不进入必需动作成功计数，也不参与“任一必需动作失败”的递归判断。
 
 `partial_success` 是交付 outcome，不是健康任务状态：至少一个必需动作成功且至少一个失败时，Task 仍为 `failed`，但列表可用“部分交付”快捷筛选这一类失败，并保留全部成功链接和仅重试失败目标的入口。
 
-GitLab MR 或 GitHub PR 进入终态 `failed` 后，平台必须从同一份 `freeze_change` 生成保底 Patch。保底 Patch 是恢复产物，不满足原远端动作，也不把 Task 改成成功：
+GitLab Push 或 GitHub PR 进入终态 `failed` 后，平台必须从同一份 `freeze_change` 生成保底 Patch。保底 Patch 是恢复产物，不满足原远端动作，也不把 Task 改成成功：
 
 - 远端动作失败且没有其他必需动作成功：Task 为 `failed`，delivery outcome 为 `fallback_available`。
 - 至少一个必需动作成功、至少一个失败：Task 为 `failed`，delivery outcome 仍为 `partial_success`，并额外记录 `fallbackAvailable=true`。
 - 远端结果尚在 `reconciling` 时不得提前判失败；超过对账预算进入终态失败后再生成保底 Patch。
 - 用户已经取消 TaskRun 时不启动新的保底动作；已存在的 Patch 仍保留。
 
-多目标 MR/PR 先在动作内部聚合：全部目标成功时动作 `succeeded/success`；至少一个目标失败时动作 `failed`，若同时有成功目标则动作 outcome 为 `partial_success`，否则为 `failure`。Task 聚合只把该远端动作计为一个失败的必需动作，但保留所有目标明细。一个动作内一个目标成功、一个失败，也会触发一次 fallback Patch。
+`gitlabPush` 只有一个由平台生成的远端任务分支，不存在目标分支或部分成功。`githubPr` 的多目标仍先在动作内部聚合：全部目标成功时动作 `succeeded/success`；至少一个目标失败时动作 `failed`，若同时有成功目标则 outcome 为 `partial_success`，否则为 `failure`。Task 聚合只把该远端动作计为一个失败的必需动作，并保留全部目标明细。
 
-项目必须至少配置一个最终动作；动作 ID 在项目内唯一。每次 TaskRun 冻结动作配置 hash，生成单调递增的动作版本。
+流水线必须至少配置一个最终动作；动作 ID 在流水线内唯一。每次 TaskRun 冻结动作配置 hash，生成单调递增的动作版本。
 
 ### 4.6 AgentRuntime 与当前模型
 
@@ -216,7 +232,7 @@ Agent Runtime 只负责：
 - 启动、超时、取消并清理子进程。
 - 解析统一的运行结果、费用和 usage。
 
-`agentProfiles` 是平台内部的“可用模型 → Runtime 配置”注册表，用于把 `execution.currentModelId` 解析为 `runtime`、`model`、`executableRef`、超时和必要运行参数。它不是 Project 的阶段配置，也不要求普通用户维护一组 Profile。
+`agentProfiles` 是平台内部的“可用模型 → Runtime 配置”注册表，用于把 `execution.currentModelId` 解析为 `runtime`、`model`、`executableRef`、超时和必要运行参数。它不是 Pipeline 的阶段配置，也不要求普通用户维护一组 Profile。
 
 每个内部模型配置必须声明 `executableRef`，引用当前机器 `executableBindings` 中的 CLI 命令与版本检查规则；不得在共享配置中保存某台机器的 CLI 绝对路径。
 
@@ -228,7 +244,7 @@ Claude Code、Codex、OpenCode 分别实现 Runtime 适配器。Runtime 是执�
 - `TaskRun`：一次基于冻结工单、策略、代码基线和当前模型的完整执行。
 - `StageRun`：某个阶段的一次尝试。
 - `DeliveryActionRun`：最终动作的一次执行。
-- `DeliveryTargetRun`：`gitlabMr` 或 `githubPr` 中某个目标分支的子执行。
+- `DeliveryTargetRun`：`githubPr` 中某个目标分支的子执行；`gitlabPush` 没有目标分支子执行。
 
 重试会创建新 attempt 或新 TaskRun，旧产物和证据永久保留。
 
@@ -256,14 +272,14 @@ Claude Code、Codex、OpenCode 分别实现 Runtime 适配器。Runtime 是执�
 
 ### 5.2 全自动
 
-新收录且匹配项目规则的 Bug 自动进入 `queued`，随后执行完整流水线。成功路径不需要用户点击。
+新收录且匹配唯一流水线规则的 Bug 自动进入 `queued`，随后执行完整流水线。成功路径不需要用户点击。
 
 全自动不会绕过：
 
-- 项目路由、定位源与修改工作区绑定。
+- 流水线路由、定位源与修改工作区绑定。
 - Discovery 证据门禁。
 - 修改范围校验。
-- 项目验证命令。
+- 流水线验证命令。
 - 独立 Review。
 - 基线变化检查。
 - 最终动作成功条件。
@@ -341,7 +357,7 @@ ingest
 | 阶段 | 执行者 | 主要输入 | 主要输出 | 写权限 |
 |---|---|---|---|---|
 | `ingest` | 平台 | 外部工单 | 当前工单记录 | 数据库 |
-| `prepare` | 平台 | 最新工单、项目配置、定位源、cohort 基线、当前模型 | 冻结快照、入口文档、输入指纹 | 任务产物目录 |
+| `prepare` | 平台 | 最新工单、流水线配置、定位源、cohort 基线、当前模型 | 冻结快照、入口文档、输入指纹 | 任务产物目录 |
 | `scope_discovery` | 范围调查 Agent（独立会话） | 范围调查入口路径 | `scope-discovery.md/json` | 范围调查输出目录 |
 | `discovery` | 正式定位 Agent（独立会话） | Discovery 入口路径；其中只引用范围调查产物路径 | `task-discovery.md/json` | Discovery 输出目录 |
 | `assess` | 平台 | Discovery 产物与确定性门禁 | `change_required / no_change_claim / unresolved` | 数据库 |
@@ -352,7 +368,7 @@ ingest
 | `review` | Review Agent（独立会话） | 候选修改或 no-change 报告 | `review.md/json` | Review 输出目录 |
 | `pre_delivery_check` | 平台 | 最新工单、修改工作区基线、动作目标 | 稳定性检查或新一轮尝试 | 数据库与阶段目录 |
 | `freeze_change` | 平台 | 已验证工作区 | 不可变 diff、commit、checksum | 冻结目录 |
-| `deliver` | 平台动作执行器 | 冻结修改与动作配置快照 | Patch/MR/PR 结果 | 配置的外部目标 |
+| `deliver` | 平台动作执行器 | 冻结修改与动作配置快照 | Patch、GitLab Push、GitHub PR 结果 | 配置的外部目标 |
 | `finalize` | 平台 | 全部阶段和动作结果 | 任务终态、索引、清理结果 | 数据库与产物目录 |
 
 所有标注为 Agent 的阶段都使用同一个 TaskRun 当前模型快照；“范围调查 / 正式定位 / Repair / Review”描述的是阶段职责，不是不同模型配置。
@@ -366,13 +382,13 @@ ingest
 
 两个会话必须分别启动、分别记录 session、模型用量、费用和失败原因，但**统一使用 TaskRun 已解析的当前模型**。第一阶段产物是不可信的调查笔记，不是代码事实、正式证据或对第二阶段的指令；第二阶段不能仅凭笔记下结论。
 
-Project 中不再存在 `agents.scopeDiscovery`、`agents.discovery`、`agents.repair`、`agents.review` 之类的阶段模型角色键。平台不得因阶段不同而静默换模型；如果未来需要实验性多模型策略，必须作为新的明确产品能力重新设计，不能借旧 Profile 字段回流。
+Pipeline 中不再存在 `agents.scopeDiscovery`、`agents.discovery`、`agents.repair`、`agents.review` 之类的阶段模型角色键。平台不得因阶段不同而静默换模型；如果未来需要实验性多模型策略，必须作为新的明确产品能力重新设计，不能借旧 Profile 字段回流。
 
 平台不得把第一阶段正文拼进第二阶段 Prompt。第二阶段入口文档只写范围调查产物的绝对路径及其信任边界，Runtime 仍只收到入口文档绝对路径和最小启动指令。范围调查失败时任务以 `scope_discovery_failed` 结束；正式定位无法反查时以 `discovery_unresolved` 结束，界面展示阶段、原因、已核实线索和建议动作。
 
 正式 Discovery 职责：
 
-- 完整读取冻结工单、评论、附件清单和项目策略。
+- 完整读取冻结工单、评论、附件清单和流水线策略。
 - 在只读定位源内搜索与工单相关的模块、符号、配置、资源、协议和历史变更，并给出到唯一修改工作区的映射。
 - 结合堆栈、错误码、页面名、版本、关联提交等线索形成证据链。
 - 指出可能的复现链、根因方向、受影响边界和待核实内容。
@@ -403,23 +419,23 @@ Project 中不再存在 `agents.scopeDiscovery`、`agents.discovery`、`agents.r
 
 ### 6.5 定位结论到修改能力的门禁
 
-`assess` 不只判断“是否找到文件”，还必须判断定位结论能否由唯一 `ModificationWorkspace` 完成。配置、Prefab、场景、资源清单、脚本和普通文本资产都属于可修改文件；平台不得仅因为它们“不是代码”而失败。只要目标位于修改工作区、格式可安全处理、项目策略允许且验证方式成立，就继续进入 Repair。
+`assess` 不只判断“是否找到文件”，还必须判断定位结论能否由唯一 `ModificationWorkspace` 完成。配置、Prefab、场景、资源清单、脚本和普通文本资产都属于可修改文件；平台不得仅因为它们“不是代码”而失败。只要目标位于修改工作区、格式可安全处理、流水线策略允许且验证方式成立，就继续进入 Repair。
 
 最终判定责任属于平台 `assess` 门禁，不接受 Agent 自报“应该能改”作为授权。门禁按下列确定性能力判断：
 
 - UTF-8/项目声明编码的文本文件可由通用文本修改能力处理，但仍受路径、扩展名、大小和生成文件策略限制。
-- JSON、YAML、XML 等结构化文本必须能重新解析，并在项目验证中执行相应语法/Schema 检查。
-- Unity 文本序列化的 Prefab/Scene 只有在项目明确允许相应扩展名、文本格式可解析且存在 YAML/项目验证时才可修改。
+- JSON、YAML、XML 等结构化文本必须能重新解析，并在流水线验证中执行相应语法/Schema 检查。
+- Unity 文本序列化的 Prefab/Scene 只有在流水线明确允许相应扩展名、文本格式可解析且存在 YAML/流水线验证时才可修改。
 - 二进制 Prefab、专有资源和需要 GUI 编辑器保存的资产，只有注册了支持该格式的确定性 writer、可做非交互 round-trip，并配置了验证命令时才允许修改；只读 parser 不等于 writer。
-- “验证方式成立”指项目在任务开始前已有能够检查该类变更的必需验证步骤或显式的、可审计替代门禁，不允许 Agent 临时声明“肉眼看起来没问题”。
+- “验证方式成立”指流水线在任务开始前已有能够检查该类变更的必需验证步骤或显式的、可审计替代门禁，不允许 Agent 临时声明“肉眼看起来没问题”。
 
-Agent 负责提供文件格式、目标路径和所需工具的证据；平台结合项目策略和适配器 capability 作最终允许/拒绝决定。
+Agent 负责提供文件格式、目标路径和所需工具的证据；平台结合流水线策略和适配器 capability 作最终允许/拒绝决定。
 
 在 Repair 前已经能够确定以下情况时，必须在 `assess` 失败，不能浪费写会话或伪造空 diff：
 
 | 情况 | 失败码 | 用户交互 |
 |---|---|---|
-| 真正目标位于另一个工作区 | `source_mismatch` | 展示定位证据，提供“编辑项目并重新运行” |
+| 真正目标位于另一个工作区 | `source_mismatch` | 展示定位证据，提供“编辑流水线并重新运行” |
 | 一次修复必须同时修改多个工作区 | `multiple_workspaces_required` | 列出所需工作区；第一版不做部分修改 |
 | 文件在工作区内但被根目录/扩展名策略禁止 | `workspace_policy_blocked` | 精确显示被阻止的路径和策略项 |
 | 二进制、专有格式或必须通过编辑器交互修改，当前适配器无法安全写入 | `unsupported_artifact_change` | 显示格式、所需工具和人工处理建议 |
@@ -428,7 +444,7 @@ Agent 负责提供文件格式、目标路径和所需工具的证据；平台�
 
 如果上述事实只能在 Repair 深入读取后发现，Repair 必须输出 `outcome=blocked`、稳定 `blocking_code` 和 EvidenceRef；平台重新执行同一套 capability/policy 判定，确认后在 `repair` 阶段以相同失败码结束。失败阶段记录“事实在哪一阶段被确认”，失败码记录“为什么不可修”，二者不得互相替代。
 
-这些情况都不能转为 `no_change`：Bug 仍然存在，只是当前项目配置或平台能力无法完成修复。
+这些情况都不能转为 `no_change`：Bug 仍然存在，只是当前流水线配置或平台能力无法完成修复。
 
 ### 6.6 Repair 与有界修复循环
 
@@ -473,7 +489,7 @@ data/tasks/<task-id>/
       ticket.md
       ticket.raw.json
       attachments.json
-      project-policy.md
+      pipeline-policy.md
       localization-source-manifest.json
       modification-workspace-manifest.json
       config-snapshot.json
@@ -620,8 +636,8 @@ StageRun 同时保存 `attempt`、开始/结束时间、输入指纹、Runner、
 至少支持：
 
 - `ticket_fetch_failed`
-- `project_not_found`
-- `project_ambiguous`
+- `pipeline_not_found`
+- `pipeline_ambiguous`
 - `ticket_changed_during_run`
 - `localization_source_not_found`
 - `modification_workspace_not_found`
@@ -659,15 +675,15 @@ StageRun 同时保存 `attempt`、开始/结束时间、输入指纹、Runner、
 
 | 边界 | 终止阶段与结果 |
 |---|---|
-| 保存项目时目录、仓库类型或动作组合无效 | Project Preflight `not_ready`，不创建 TaskRun |
+| 保存流水线时工单入口、目录、仓库类型或动作组合无效 | Pipeline Preflight `not_ready`，不创建 TaskRun |
 | 排队后本机目录消失、变为只读或无法创建隔离工作区 | `prepare/workspace_prepare` 失败，不调用 Repair |
-| SVN/Git 当前布局不能隔离且项目未允许独占 | `workspace_prepare_failed`，不在共享目录冒险修改 |
+| SVN/Git 当前布局不能隔离且流水线未允许独占 | `workspace_prepare_failed`，不在共享目录冒险修改 |
 | Discovery 已证明需要工作区外、多工作区或外部系统修改 | `assess` 使用第 6.5 节失败码 |
 | 只有 Repair 深入读取后才证明无法在工作区内完成 | `repair`，保留同一个语义失败码与 EvidenceRef |
 | Agent 返回成功但没有有效 diff | `repair_no_valid_diff`，不能进入 `no_change` |
 | 测试 CLI、依赖或验证环境缺失 | `verify` 的 `verification_environment_unavailable`，不消耗 Repair 重试预算 |
 | 基线更新后确认上游已经修复 | 经 No-change Verify/Review 后 `completed/no_change` |
-| MR/PR 远端结果不确定 | 先 `reconciling`；预算耗尽后失败并触发 fallback Patch |
+| GitLab Push / GitHub PR 远端结果不确定 | 先 `reconciling`；预算耗尽后失败并触发 fallback Patch |
 | fallback 目录不可写或磁盘不足 | 保留远端主失败，附加 `fallback_patch_failed` |
 
 ## 9. Bug 已不存在或已经修复
@@ -687,7 +703,7 @@ StageRun 同时保存 `attempt`、开始/结束时间、输入指纹、Runner、
 
 - 当前修改工作区和冻结 revision/SHA。
 - 关键代码或配置证据。
-- 可执行验证及其结果；如果项目没有测试能力，必须有项目级显式豁免和替代证据。
+- 可执行验证及其结果；如果目标工程没有测试能力，必须有流水线级显式豁免和替代证据。
 - 可能的修复提交、MR 或版本记录；找不到时说明。
 - 为什么不需要 Patch、MR 或 PR。
 - 独立 Review 的通过结论。
@@ -698,9 +714,9 @@ StageRun 同时保存 `attempt`、开始/结束时间、输入指纹、Runner、
 - 历史提交、版本说明或旧符号记录证明相关逻辑已删除或替换。
 - 可重复的复现步骤在目标基线上稳定不再出现，并记录运行环境。
 
-`not_applicable_to_workspace` 只用于“定位源与修改工作区绑定正确，但工单明确针对另一个版本、平台或被项目策略排除的组件”。如果真正需要修改的代码位于另一个工作区，则必须是 `source_mismatch` 失败。
+`not_applicable_to_workspace` 只用于“定位源与修改工作区绑定正确，但工单明确针对另一个版本、平台或被流水线策略排除的组件”。如果真正需要修改的代码位于另一个工作区，则必须是 `source_mismatch` 失败。
 
-`allowNoAutomatedTests` 只豁免项目缺少自动测试套件，不能豁免当前任务所需运行环境不可用。无测试项目仍必须提供配置中预先声明的编译、静态检查、历史证据或人工可复核的替代验证。
+`allowNoAutomatedTests` 只豁免目标工程缺少自动测试套件，不能豁免当前任务所需运行环境不可用。无测试工程仍必须提供流水线配置中预先声明的编译、静态检查、历史证据或人工可复核的替代验证。
 
 ### 9.3 不能算无修改的情况
 
@@ -723,7 +739,7 @@ StageRun 同时保存 `attempt`、开始/结束时间、输入指纹、Runner、
 - 不同 TaskRun 可并发。
 - 所有需要启动 Agent CLI 的 StageRun 共享一个全局 LLM 并发池，默认容量为 4。
 - `freeze_change` 之后，彼此独立的最终动作可有界并发。
-- `gitlabMr` / `githubPr` 的不同目标分支可有界并发；单个目标内的 commits 必须按顺序串行应用。
+- `githubPr` 的不同目标分支可有界并发；单个目标内的 commits 必须按顺序串行应用。`gitlabPush` 只有一个远端任务分支。
 
 LLM 槽位只覆盖真实 Agent 子进程从启动到退出的区间。排队、工单拉取、基线准备、工作区创建、验证命令、冻结和交付均不占用 LLM 槽；等待 LLM 槽时也不得持有仓库锁、工作区池 lease 或外部资源锁。槽位按入队时间公平发放，使用数据库 lease、heartbeat 和过期回收保证服务重启后不会永久泄漏。一个 TaskRun 不允许两个 LLM 阶段同时执行。
 
@@ -736,14 +752,14 @@ LLM 槽位只覆盖真实 Agent 子进程从启动到退出的区间。排队、
 - 可选的 Runtime 二级上限，但不得把同一全局池拆成互不借用的固定配额。
 - 每个 TicketProvider 的请求限流。
 - 每个 Git remote host 的请求限流。
-- 每个项目或修改工作区的并发上限。
+- 每条流水线或修改工作区的并发上限。
 - 可选命名资源锁，例如共享测试服、固定端口和数据库。
 
 ### 10.2 同源基线批次与短时锁
 
 同一物理修改工作区在短时间内一起进入 `prepare` 的 TaskRun 必须组成一个 `BaselineCohort`，共享第一个任务解析出的基线版本。默认合批窗口 `baselineCohortWindowMs=2000`，可在全局高级配置中调整。
 
-批次键至少包含规范化仓库根路径、VCS 类型和基线分支/URL；不能仅按 Project ID 合批。凭据只属于当前部署用户的仓库访问环境，不进入 key、日志或任务快照。协议如下：
+批次键至少包含规范化仓库根路径、VCS 类型和基线分支/URL；不能仅按 Pipeline ID 合批。凭据只属于当前部署用户的仓库访问环境，不进入 key、日志或任务快照。协议如下：
 
 1. 第一个任务创建 `open` cohort，成为 leader，并取得该批次键对应的短时仓库刷新锁。
 2. leader 对 Git 只执行一次 `fetch --prune` 并解析基线 ref 为不可变 commit SHA；对 SVN 只执行一次远端 revision 查询/受控更新并解析为不可变 revision。
@@ -760,7 +776,7 @@ LLM 槽位只覆盖真实 Agent 子进程从启动到退出的区间。排队、
 
 ### 10.4 SVN 工作区
 
-SVN 必须使用独立任务工作副本或受管理的工作副本池，并以 cohort 冻结的 revision 执行 `checkout/update -r`。若某种 SVN 布局无法可靠隔离，则该修改工作区必须配置为独占 lease，但不影响其他修改工作区的任务并发；这种降级必须在项目 Preflight 中明确提示吞吐影响。
+SVN 必须使用独立任务工作副本或受管理的工作副本池，并以 cohort 冻结的 revision 执行 `checkout/update -r`。若某种 SVN 布局无法可靠隔离，则该修改工作区必须配置为独占 lease，但不影响其他修改工作区的任务并发；这种降级必须在流水线 Preflight 中明确提示吞吐影响。
 
 ### 10.5 持久化调度
 
@@ -778,7 +794,7 @@ Worker 领取 StageRun 时写入：
 - 未开始的 queued 阶段可恢复。
 - 只读阶段可根据输入指纹重试。
 - 可能已经产生写操作或费用的阶段先对账，再决定续跑或失败。
-- 不允许盲目重放 GitLab MR 或 GitHub PR 创建请求。
+- 不允许盲目重放 GitLab Push 或 GitHub PR 创建请求。
 
 ### 10.6 基线变化
 
@@ -793,9 +809,9 @@ Worker 领取 StageRun 时写入：
 
 ## 11. 验证与独立 Review
 
-### 11.1 项目验证配置
+### 11.1 流水线验证配置
 
-项目可配置多个验证步骤：
+流水线可配置多个验证步骤：
 
 ```yaml
 verification:
@@ -815,12 +831,12 @@ verification:
 
 命令使用参数数组，不使用未经解析的 shell 字符串。每步记录 stdout、stderr、退出码、耗时和产物路径。
 
-没有自动测试的项目必须显式配置：
+没有自动测试能力的流水线必须显式配置：
 
 ```yaml
 verification:
   allowNoAutomatedTests: true
-  reason: "历史项目暂无自动测试，使用编译和独立 Review 作为替代门禁"
+  reason: "目标工程暂无自动测试，使用编译和独立 Review 作为替代门禁"
 ```
 
 不能因为配置缺失而悄悄跳过验证。
@@ -848,14 +864,12 @@ Review 输出 `approved`、`needs_repair` 或 `rejected`。`needs_repair` 在预
 type: patch
 id: primary-patch
 outputDirectory: "D:/CodeFixerPatches"
-filenameTemplate: "{ticket_provider}-{ticket_id}-{run_id}.patch"
 overwrite: false
 ```
 
 可配置项：
 
 - 输出目录。
-- 文件名模板。
 - 是否允许覆盖。
 - Git 或 SVN 对应的 Patch 格式选项。
 
@@ -866,142 +880,94 @@ overwrite: false
 - 只消费 `freeze_change`。
 - 先写同目录临时文件，再原子改名。
 - 记录文件大小、SHA-256、修改文件数和下载地址。
+- 文件名固定使用冻结的标准交付日志并追加 `.patch`；仅净化当前操作系统禁止的字符、控制字符和尾部点/空格，不允许 LLM直接提供文件名。
+- 路径过长时保留工单标识、修改摘要和提交人，并追加稳定短 hash；同一次运行重试必须得到同名文件。
 - 相同幂等键且内容 hash 相同时，重试直接复用已有文件。
 - 同名文件内容不同且 `overwrite=false` 时失败，不静默覆盖。
 
-## 13. 最终动作：GitLab MR
+## 13. 最终动作：GitLab Push
 
 ### 13.1 行为定义
 
-动作类型固定为 `gitlabMr`。它先从冻结修改确定性地产生一组 delivery commits，再复刻 GitLab Web 的 Cherry-pick 后创建 MR 流程：
+动作类型固定为 `gitlabPush`。它从冻结修改确定性地产生一个交付 Commit，推送到同一 GitLab 仓库的受控任务分支，并把 Commit URL 交给用户：
 
 ```text
-冻结修改 → 有序 delivery commits
-  → 对每个目标分支：
-       从目标分支创建临时分支
-       → 按最旧到最新 Cherry-pick 全部 commits
-       → 从临时分支向目标分支创建普通 MR
+冻结修改 → 标准交付日志 → 交付 Commit
+  → 推送受控任务分支
+  → 返回 Commit URL
+  → 用户在 GitLab Web 自行选择目标分支并 Cherry-pick
 ```
 
-目标分支绝不能被平台直接修改。MR 创建成功即表示该目标交付成功，不等待 MR 合并。
+平台不创建 MR、不选择 Cherry-pick 目标分支，也不跟踪用户之后是否完成 Cherry-pick。远端任务分支与 Commit SHA 已确认可访问即表示动作成功。
 
 ### 13.2 配置
 
 ```yaml
-type: gitlabMr
-id: main-gitlab-mr
-targetBranches:
-  - main
-  - release/current
-titleTemplate: "[CodeFixer] {task_id}"
-descriptionTemplate: "CodeFixer 自动修复任务 {run_id}。"
+deliveryLog:
+  technologyTag: "Lua"
+  branchLabel: "主干"
+  versionSource: ticketFixVersion
+  versionFallback: "v4.8"
+  submitterName: "黄永熙"
+finalActions:
+  - type: gitlabPush
+    id: gitlab-push
 ```
 
-可配置项：
+“最终动作”步骤顶部提供一个公共“交付日志”区，填写技术域、分支标签、版本来源/兜底版本和提交人姓名；它属于同一次冻结交付，不在 Patch、GitLab Push、GitHub PR 卡片中重复填写。版本来源第一版支持“固定版本”和“工单修复版本”：TAPD 读取明确映射的修复版本字段，Redmine 读取 `fixed_version.name`；字段为空时必须使用配置的兜底值或在 Preflight 阻止启动，不允许 LLM 猜版本。
 
-- 一个或多个目标分支。
-- MR 标题和描述模板。
+动作直接复用流水线唯一的 `ModificationWorkspace`，只在其自动识别为 `hostingKind=gitlab` 后开放。用户不重复选择仓库，不配置目标分支、MR、assignee、GitLab API Token、Project Path 或独立 connection。仓库推送复用部署用户已经配置的 SSH key / Git credential。
 
-动作直接复用项目的 `ModificationWorkspace`，只在其自动识别为 `hostingKind=gitlab` 后开放。CodeFixer 不要求再次选择仓库，也不保存 GitLab URL、Project Path、Token 或独立 connection。仓库拉取和推送复用部署用户已经配置的 SSH key / Git credential；项目 Preflight 必须验证仓库布局、`origin`、目标分支、远端写权限和 GitLab push options。MR 通过 push options 创建，源分支合并后自动删除。
+`submitterName` 是标准交付日志中 `提交人：` 后面的显示姓名，不等同于 Git Author 或 GitLab 用户名。若同一流水线配置多个最终动作，各动作消费同一冻结值。
 
-### 13.3 Commit 可见性
+### 13.3 标准交付日志
 
-GitLab remote 必须能够接收本任务的 commit SHA 和 MR push options。平台只允许把冻结修改物化回同一个 GitLab 修改工作区，创建并发布受控任务 commit/ref。SVN、GitHub 或其他 Git 修改源不得额外指定 GitLab 仓库来启用本动作。
-
-此过程属于平台，不由 Agent 执行。生成的 delivery commits 记录在 `DeliveryActionRun`，不回写或改变不可变 `freeze_change`；所有目标分支必须使用完全相同的 commit 序列。平台必须确认 commits：
-
-- 非空。
-- 无重复。
-- 按最旧到最新排序。
-- 与冻结修改 hash 一致。
-- 已通过受控 ref 推送到同一个 `origin`。
-
-### 13.4 每个目标分支的步骤
-
-1. 加载项目并确认 `origin` 仍是已识别的同一个 GitLab 仓库，且目标分支存在。
-2. 按本地幂等记录和远端临时分支确认是否已经执行本动作。
-3. 从目标分支当前 HEAD 创建临时分支。
-4. 按顺序 Cherry-pick 全部 commits。
-5. 任意 commit 失败时停止，禁止创建只包含部分 commits 的 MR。
-6. 使用最新 commit subject 作为默认标题。
-7. 在一次 Git push 中携带 `merge_request.create`、目标分支、标题、描述和删除源分支选项，创建普通 MR。
-8. 解析并保存 GitLab 返回的 MR URL、源/目标分支和 commits；无法确认 URL 时进入 `reconciling`，禁止盲目再次 push。
-
-### 13.5 临时分支命名
-
-遵循：
+平台冻结统一 Commit subject：
 
 ```text
-cherry-pick-<最新commit前8位>
-cherry-pick-<最新commit前8位>-2
-...
-cherry-pick-<最新commit前8位>-100
+{type}：【{技术域}】【#{工单标识}】【{分支标签}】【{版本}】{模块名} - {修改摘要}  提交人：{姓名}
 ```
 
-名称已存在时递增后缀。连续 100 个名称均被占用则该目标失败。
+字段规则：
 
-### 13.6 MR 描述与幂等键
+- TAPD Bug：`type=fix`，工单标识为 `B<id>`。
+- TAPD 非 Bug：`type=feat`，工单标识为 `S<id>`。
+- Redmine：无论 tracker，统一 `type=fix`，工单标识只使用原始 `<id>`，不加字母。
+- 技术域、分支标签和版本来自流水线配置或明确的工单字段映射，不由 LLM 猜测。
+- LLM 只输出简短的 `module_name` 和 `change_summary`；Review Agent 验证其与冻结修改一致，平台负责固定标点和拼装。
+- 姓名来自 `submitterName`；不得从 Git Author、邮箱或 GitLab 用户名反推。
 
-默认描述包含：
+交付日志在 Review 通过后生成一次，写入 `delivery-metadata.json` 并随 `freeze_change` 冻结。Patch 文件名、GitLab Commit subject 和默认 GitHub PR 标题都复用同一字符串，重试时不得重新询问 LLM。
 
-- CodeFixer 任务 ID。
-- 外部工单 ID 和链接。
-- 完整 commit 列表。
-- 修复与验证摘要。
-- 不可见的稳定 delivery key。
+### 13.4 分支、推送与结果
 
-```html
-<!-- codefixer-delivery-key: <task>/<run>/<action-version>/<target> -->
+受控分支遵循：
+
+```text
+codefixer/<normalized-ticket-key>/<run-short-id>
 ```
 
-网络中断或服务重启后，平台先按本地记录、delivery key、源分支、目标分支和远端 branch SHA 对账。若远端分支存在但本地没有可确认的 MR URL，标记 `gitlab_result_uncertain` 并等待人工确认，不得盲目重建或重复 push。
+执行步骤：
 
-### 13.7 失败与清理
+1. 确认 `origin` 仍指向识别时的同一个 GitLab 项目，并验证 fetch/push 能力。
+2. 从冻结基线物化交付 Commit；Commit 必须非空且与 `change-manifest` 完全一致。
+3. 检查同名远端分支。分支不存在时执行普通 push；存在且 SHA 与冻结结果相同则幂等复用；存在但 SHA 不同则失败，禁止 force push。
+4. 用 `git ls-remote` 确认远端分支 SHA 等于交付 Commit SHA。
+5. 使用仓库识别阶段已确认的 `webBaseUrl` 与规范化项目路径生成并保存项目 URL、分支 URL 和 `<project>/-/commit/<sha>` Commit URL；不得擅自把 SSH remote 改写为 HTTPS。
 
-临时分支创建成功后、MR 创建完成前发生错误时，平台尝试删除临时分支。清理失败不得覆盖主失败；结果记录：
+任务分支成功后不自动删除，因为它是人工 Cherry-pick 前保证 Commit 可达的远端引用。用户之后的分支清理不属于当前任务。
 
-- 原失败原因。
-- 遗留分支名。
-- `cleanupRequired=true`。
-- 清理命令的脱敏错误。
+### 13.5 失败、对账与保底
 
-成功创建的 MR 不自动关闭或回滚。
+网络中断但 push 结果未知时进入 `reconciling`，只通过远端分支 SHA 对账，不盲目重复创建新分支。确认远端 SHA 后转成功；超过预算仍无法确认时转 `failed`。
 
-### 13.8 多目标与部分成功
-
-每个目标分支使用统一粗状态：
-
-- `pending`
-- `running`
-- `reconciling`
-- `succeeded`
-- `failed`
-
-当前子步骤单独保存在 `step`：
-
-- `preflight`
-- `materializing_commits`
-- `creating_source_branch`
-- `cherry_picking`
-- `creating_mr`
-- `cleaning_up`
-- `done`
-
-示例：三个目标中两个 MR 成功、一个冲突：
-
-- `gitlabMr.status = failed`。
-- `gitlabMr.outcome = partial_success`。
-- `task.status = failed`。
-- 两个成功 MR 的链接保留。
-- 重试默认只执行失败目标。
-
-目标返回 Cherry-pick empty 时，除非额外证明所有修改已存在并符合幂等记录，否则按失败处理，不能直接转换为 `no_change`。
+`gitlabPush` 失败是任务交付失败，并从同一冻结修改生成或复用 fallback Patch。失败结果至少记录当前步骤、脱敏 Git 错误、计划分支、是否存在远端副作用以及 fallback 状态。它只有一个远端结果，不存在目标分支级部分成功。
 
 ## 14. 最终动作：GitHub PR
 
 ### 14.1 行为与配置
 
-`githubPr` 与 `gitlabMr` 使用同一份冻结修改、临时分支、多目标、部分成功和幂等状态契约，只在修改工作区自动识别为 `hostingKind=github` 时开放：
+`githubPr` 使用同一份冻结修改，但保留创建 PR 所需的目标分支、多目标、部分成功和幂等状态契约，只在修改工作区自动识别为 `hostingKind=github` 时开放：
 
 ```yaml
 type: githubPr
@@ -1016,7 +982,7 @@ CodeFixer 不要求用户在 Web 中再次填写 GitHub 仓库或 Token。Git �
 
 ### 14.2 GitLab 与 GitHub 能力隔离
 
-- GitLab 工作区只显示 Patch 和 GitLab MR。
+- GitLab 工作区只显示 Patch 和 GitLab Push。
 - GitHub 工作区只显示 Patch 和 GitHub PR。
 - SVN 与其他 Git 工作区只显示 Patch。
 - 修改工作区重新识别后，已有但不再兼容的动作配置必须阻止保存，不能静默删除或转换。
@@ -1026,16 +992,16 @@ CodeFixer 不要求用户在 Web 中再次填写 GitHub 仓库或 Token。Git �
 保底策略默认开启，不要求用户事先配置 Patch 动作或目录。保底目录固定为平台托管数据目录：
 
 ```text
-<storage.dataRoot>/fallback-patches/<sanitized-project-id>/
+<storage.dataRoot>/fallback-patches/<sanitized-pipeline-id>/
   <ticket-provider>-<ticket-id>-<run-id>-<change-version>.patch
 ```
 
-该目录属于 CodeFixer 运行数据，不能创建在被修复仓库内部，也不能进入 Git。启动 Readiness 和项目 Preflight 必须验证根目录可创建、可写且剩余空间足够。
+该目录属于 CodeFixer 运行数据，不能创建在被修复仓库内部，也不能进入 Git。启动 Readiness 和流水线 Preflight 必须验证根目录可创建、可写且剩余空间足够。
 
 触发规则：
 
 1. `freeze_change` 已存在。
-2. 任一 `gitlabMr` / `githubPr` 动作或目标进入终态 `failed`，包括运行期无副作用 preflight 失败、目标分支漂移、Cherry-pick 冲突、认证失效、push/create 失败，以及超过对账预算后的结果不确定。
+2. 任一 `gitlabPush` / `githubPr` 动作或目标进入终态 `failed`，包括运行期无副作用 preflight 失败、认证失效、push/create 失败、GitHub 目标分支漂移，以及超过对账预算后的结果不确定。
 3. 如果配置的普通 Patch 动作已经成功并且 hash 与当前 `freeze_change` 一致，直接把它登记为 fallback，禁止复制第二份。
 4. 如果普通 Patch 动作未配置、未运行或失败，使用上述平台托管目录原子生成一份保底 Patch。
 5. 多个远端目标失败时每个 `change_version` 只生成一份保底 Patch，并在其中记录全部触发失败 ID。
@@ -1046,7 +1012,7 @@ CodeFixer 不要求用户在 Web 中再次填写 GitHub 仓库或 Token。Git �
 
 ```text
 交付失败 · 已生成保底 Patch
-[下载 Patch] [打开目录] [仅重试 MR/PR]
+[下载 Patch] [打开目录] [仅重试失败交付]
 ```
 
 如果保底也失败，则显示“交付失败，保底 Patch 也未生成”以及两组独立原因。保底成功不允许出现绿色“已完成”，也不自动关闭外部 Bug。
@@ -1078,7 +1044,7 @@ CodeFixer 不要求用户在 Web 中再次填写 GitHub 仓库或 Token。Git �
 - 工单、策略、定位源快照、修改工作区基线、当前模型或最终动作配置变化时，必须创建新 TaskRun 并从 `prepare` 开始。
 - Delivery 部分失败默认只重试失败动作/目标。
 - 已成功动作不重复。
-- 用户想为已关闭的成功 MR/PR 再创建一个，属于“重新交付”，必须创建新的动作版本。
+- 用户想重新推送已清理的 GitLab 任务分支，或为已关闭的 GitHub PR 再创建一个，属于“重新交付”，必须创建新的动作版本。
 
 Delivery-only 重试沿用原 TaskRun 和 `change_version`，创建新的 deliver StageRun/DeliveryTarget attempt；Task 从 `failed` 回到 `queued`，全部必需动作最终成功后可转为 `completed/changed`。输入或配置发生变化时不得使用 Delivery-only 重试。
 
@@ -1108,7 +1074,7 @@ Delivery-only 重试沿用原 TaskRun 和 `change_version`，创建新的 delive
 | 知识源 | 无、HTTP 知识服务 |
 | Agent Runtime | Claude Code、Codex、OpenCode |
 | 验证 | 受控本地命令 |
-| 最终动作 | Patch、GitLab MR、GitHub PR |
+| 最终动作 | Patch、GitLab Push、GitHub PR |
 
 业务知识服务若启用，只是一个 HTTP `KnowledgeProvider`。核心代码、Prompt 协议和 UI 不出现业务项目专属语义。
 
@@ -1133,7 +1099,7 @@ Prompt plan 冻结：
 采用三层：
 
 1. Git 管理的默认配置：只放跨机器默认值、正式服务端口和 Schema 版本。
-2. 当前机器本地配置：路径、CLI 位置、项目启停和 Web 保存项，不进 Git。
+2. 当前机器本地配置：路径、CLI 位置、流水线启停和 Web 保存项，不进 Git。
 3. Secret 配置：Token、API Key 和凭据引用，不进入普通配置响应和日志。
 
 本地配置对默认配置做深度合并；保存时只写相对默认值的最小覆盖，并使用同目录临时文件加原子替换。
@@ -1141,7 +1107,7 @@ Prompt plan 冻结：
 ### 17.2 顶层结构
 
 ```yaml
-schemaVersion: 1
+schemaVersion: 2
 
 server:
   host: "0.0.0.0"
@@ -1190,18 +1156,18 @@ executableBindings:
     command: ["opencode"]
     versionArgs: ["--version"]
     versionConstraint: null
-projects: []
+pipelines: []
 ```
 
 `server.port=9522` 是 CodeFixer 第一版的正式服务约定，前端、API、健康检查、systemd 和部署文档统一使用该端口。自动化测试可临时注入随机端口，不能改写公开默认值或生产服务约定。
 
 `storage.dataRoot` 的相对路径固定相对“有效基础配置文件所在目录”解析，禁止相对进程当前工作目录解析。其规范化绝对路径在启动后不可热修改；变更数据根目录需要停服、迁移并重新启动。
 
-项目里的定位源路径、修改工作区路径和 Patch 输出目录属于当前机器配置，由相应业务表单直接选择并写入 `.local/config.json`。它们不得出现在公开默认配置或 Git 提交中。Web 可以用目录选择器或文本输入接收路径，但不得要求普通用户先创建 `pathBindings`、再回到项目里选择一个引用 ID。
+流水线里的定位源路径、修改工作区路径和 Patch 输出目录属于当前机器配置，由相应业务表单直接选择并写入 `.local/config.json`。它们不得出现在公开默认配置或 Git 提交中。Web 可以用目录选择器或文本输入接收路径，但不得要求普通用户先创建 `pathBindings`、再回到流水线里选择一个引用 ID。
 
 `executableBindings` 是平台内部的机器命令注册表。平台优先从部署用户 `PATH` 自动发现 Git、SVN、`gh` 和 Agent CLI；只有自动发现失败或管理员显式覆盖时才写入本机配置。普通设置页不展示“命令”卡片；健康检查正常时只显示能力可用，失败时才在诊断详情展示命令、探测结果和修复方式。当前模型所需的 Claude Code、Codex 或 OpenCode Runtime 必须存在有效 binding。
 
-`agentProfiles` 在第一版保留为内部模型/Runtime 注册结构，用于兼容适配器配置和解析 `currentModelId`。它不是 Project 的可配置角色表，Web 默认不提供 Profile CRUD；用户只操作 `execution.currentModelId`。
+`agentProfiles` 在第一版保留为内部模型/Runtime 注册结构，用于解析 `currentModelId`。它不是 Pipeline 的可配置角色表，Web 默认不提供 Profile CRUD；用户只操作 `execution.currentModelId`。
 
 版本检查使用以下确定性协议：
 
@@ -1222,7 +1188,7 @@ projects: []
 
 - 必须指向一个有效的内部模型配置。
 - 全局只能有一个当前值。
-- Project 不允许覆盖。
+- Pipeline 不允许覆盖。
 - 所有 LLM 阶段统一消费该值解析出的模型。
 - Web 只提供当前模型单选，不暴露阶段 Profile 管理。
 
@@ -1241,7 +1207,7 @@ projects: []
 
 每次 TaskRun 开始执行时冻结：
 
-- 有效项目配置。
+- 有效流水线配置。
 - 全局当前模型：`currentModelId`、实际模型 ID、Runtime、`executableRef` 和影响调用语义的运行参数。
 - 修改工作区与自动识别结果。
 - 定位源与定位到修改工作区的映射规则。
@@ -1250,7 +1216,7 @@ projects: []
 - 最终动作。
 - 配置版本/hash。
 
-运行中热重载只影响后续开始执行的 TaskRun。Project 配置快照中不得重新出现阶段 Agent/模型字段。
+运行中热重载只影响后续开始执行的 TaskRun。Pipeline 配置快照中不得重新出现阶段 Agent/模型字段。
 
 ### 17.4 依赖检查与 Readiness
 
@@ -1259,7 +1225,7 @@ projects: []
 CodeFixer 的 Python 运行时基线固定为 **64 位 CPython 3.12+**。Bootstrap 必须在创建虚拟环境前校验实现、版本和位宽；启动、测试与 systemd 必须直接调用仓库内 `backend/.venv`，不得在虚拟环境缺失或无效时静默回退到系统 `python`。
 
 1. 全局启动检查由 `GET /api/readiness` 暴露，决定服务是否可接收新任务。
-2. 项目 Preflight 由保存配置、手工测试、切换全自动和 TaskRun `prepare` 调用，决定具体项目及最终动作是否可执行。
+2. 流水线 Preflight 由保存配置、手工体检、切换全自动和 TaskRun `prepare` 调用，决定整条流水线及最终动作是否可执行。
 
 全局检查至少覆盖：
 
@@ -1271,20 +1237,21 @@ CodeFixer 的 Python 运行时基线固定为 **64 位 CPython 3.12+**。Bootstr
 - 已启用的 Git、SVN、`gh` 和其他必需 CLI 可自动发现或有内部 binding，版本满足约束。
 - 必需的外部服务可以解析和连接；检查结果只报告凭据是否可用，不输出凭据内容。
 
-项目 Preflight 至少覆盖：
+流水线 Preflight 至少覆盖：
 
-- TicketProvider 可连接、增量游标能力与筛选字段有效。
-- TicketProvider 的地址、工作区和 Secret 已在反馈源表单配置，凭据测试成功。
+- `providerRef` 指向仍存在且已启用的 TicketProvider；连接可用、增量游标能力与筛选字段有效。
+- TicketProvider 的地址、工作区和 Secret 已在“工单接入”表单配置，凭据测试成功。
+- 路由规则完整；可静态识别的 catch-all、同优先级或空条件冲突必须阻止保存。
 - LocalizationSource 可读取，定位结果协议能映射到唯一 ModificationWorkspace。
 - ModificationWorkspace 的本机目录存在；Git/SVN 类型与 GitLab/GitHub hosting 类型可自动识别；基线可读取，隔离工作区可创建。
-- 全局当前模型及其 Runtime 可用；Project 不检查 `scopeDiscovery/discovery/repair/review` 等阶段 Profile 字段。
+- 全局当前模型及其 Runtime 可用；Pipeline 不检查 `scopeDiscovery/discovery/repair/review` 等阶段 Profile 字段。
 - 验证命令的可执行文件、参数、工作目录和超时有效。
 - Patch 的本机输出目录可创建且可写。
-- GitLab MR 只绑定 GitLab 修改工作区，目标分支、remote 访问、push 权限和 push options 有效。
+- GitLab Push 只绑定 GitLab 修改工作区，remote 访问和受控任务分支 push 权限有效；不检查目标分支、MR 或 push options。
 - GitHub PR 只绑定 GitHub 修改工作区，目标分支、remote 访问、push 权限和当前部署用户 `gh` 认证有效。
 - 允许修改路径和最终动作 ID 不冲突，动作类型符合自动识别出的仓库能力。
 
-每个检查返回稳定的 check ID、`ready|warning|failed`、用户可读原因和修复建议。当前模型检查使用稳定的全局语义，例如 `agent.current` / `agent.current.executable`，不得重新按阶段生成四套 Agent readiness。必需依赖失败时项目为 `not_ready`：全自动调度不领取该项目的新任务，手工开始按钮禁用；运行前状态变化则 TaskRun 以 `configuration_not_ready` 失败并保留检查证据。可选知识源不可用只产生 warning，并在任务档案中明确标注降级，不冒充查询成功。
+每个检查返回稳定的 check ID、`ready|warning|failed`、用户可读原因和修复建议。当前模型检查使用稳定的全局语义，例如 `agent.current` / `agent.current.executable`，不得重新按阶段生成四套 Agent readiness。必需依赖失败时流水线为 `not_ready`：全自动调度不领取该流水线的新任务，手工开始按钮禁用；运行前状态变化则 TaskRun 以 `configuration_not_ready` 失败并保留检查证据。可选知识源不可用只产生 warning，并在任务档案中明确标注降级，不冒充查询成功。
 
 ## 18. 持久化模型
 
@@ -1295,6 +1262,7 @@ CodeFixer 的 Python 运行时基线固定为 **64 位 CPython 3.12+**。Bootstr
 - `ticket_records`：外部工单当前视图和游标。
 - `ticket_snapshots`：不可变工单版本。
 - `tasks`：长期任务与当前顶层状态。
+- `tasks.pipeline_id`：任务唯一绑定的流水线；不得同时绑定多条流水线。
 - `task_runs`：每次执行及输入指纹。
 - `stage_runs`：阶段和 attempt。
 - `artifacts`：路径、类型、hash、大小和来源。
@@ -1333,10 +1301,10 @@ GET    /api/settings
 PUT    /api/settings
 PUT    /api/settings/execution-mode
 
-GET    /api/projects
-POST   /api/projects
-PUT    /api/projects/:id
-POST   /api/projects/:id/preflight
+GET    /api/pipelines
+POST   /api/pipelines
+PUT    /api/pipelines/:id
+POST   /api/pipelines/:id/preflight
 POST   /api/workspaces/detect
 
 GET    /api/providers
@@ -1344,7 +1312,7 @@ POST   /api/providers
 PUT    /api/providers/:id
 POST   /api/providers/:id/test
 
-GET    /api/tasks
+GET    /api/tasks?pipelineId=:id&status=:status
 GET    /api/tasks/:id
 POST   /api/tasks/:id/start
 POST   /api/tasks/start-batch
@@ -1362,7 +1330,9 @@ GET    /api/events
 WS     /api/ws
 ```
 
-所有写接口使用版本号或 ETag 防止覆盖并发修改。反馈源写接口在同一个表单请求中接收 Token/密码并立刻拆分写入 Secret store；后续读取只返回 `configured: true/false`。当前模型和 LLM 并发池属于全局 settings，不创建 Project 级模型 API。
+所有写接口使用版本号或 ETag 防止覆盖并发修改。工单接入写接口在同一个表单请求中接收 Token/密码并立刻拆分写入 Secret store；后续读取只返回 `configured: true/false`。当前模型和 LLM 并发池属于全局 settings，不创建 Pipeline 级模型 API。
+
+第一版尚未上线，本次语义重构直接把配置 `schemaVersion` 提升为 2；不提供旧配置自动迁移，也不保留 `/api/projects`、`projects`、`project_id`、`ProjectConfig` 或 `project_*` 失败码的兼容别名。实现必须完整迁移为 `/api/pipelines`、`pipelines`、`pipeline_id`、`PipelineConfig` 和 `pipeline_*`，遇到旧本机配置时明确报 Schema 不兼容并要求按新流水线结构重新配置，避免新旧语义长期并存。
 
 ## 20. Web 管理界面
 
@@ -1381,37 +1351,29 @@ WS     /api/ws
 
 ### 20.2 导航
 
-第一版主导航保持轻量：
+第一版主导航只有三个入口：
 
-- 首页 / 控制台
 - 任务
-- 项目
-- 工单来源
+- 流水线
 - 设置
 
-Agent Runtime、CLI binding、知识源等机器级或高级能力不单独膨胀成日常主导航；需要时进入设置或高级配置。
+不设置独立首页，也不把工单接入做成主导航。TicketProvider、Agent Runtime、CLI binding、知识源等复用资源或机器级能力进入流水线内的次级管理入口、设置或高级配置。
 
-### 20.3 控制台
+### 20.3 全局运行控制
 
-顶部全局模式控制器：
+顶部常驻全局模式控制器：
 
 ```text
 [ 待我开始 ]  ←→  [ 全自动 ]
 ```
 
-显示：
-
-- 当前模式说明。
-- 待开始任务数量。
-- 运行中任务、LLM 槽使用量（例如 `2 / 4`）和等待 LLM 的任务数。
-- 最近 24 小时：交付成功、无修改完成、失败、部分交付。
-- 需要处理列表。
-
-切换到全自动时明确显示将排队的现有任务数量，但不把“旧任务”误解为冻结的旧仓库。
+状态、环境健康和 LLM 容量均为紧凑的全局信息，不为它们单独创建控制台页面。切换到全自动时明确显示将排队的现有任务数量，但不把“旧任务”误解为冻结的旧仓库。
 
 ### 20.4 任务列表
 
-筛选：
+任务页是全站唯一任务列表，默认同时展示全部流水线。顶部提供紧凑的流水线筛选器与状态筛选：
+
+- 全部流水线 / 指定流水线。
 
 - 待开始
 - 排队
@@ -1422,44 +1384,63 @@ Agent Runtime、CLI binding、知识源等机器级或高级能力不单独膨�
 - 已取消
 - 部分交付
 
-卡片显示：
+默认排序固定为：
+
+1. `failed`，按 `updated_at` 倒序。
+2. `awaiting_start`，按 `updated_at` 倒序。
+3. 其余状态按 `updated_at` 倒序。
+
+异常与待授权任务只在同一张账本中置顶并用分隔标注，不复制到第二个列表。选择单一状态筛选时不显示多余的置顶分区。流水线页面的“查看任务”跳转到这个任务页并带入 `pipelineId` 筛选，不创建流水线私有任务页面。
+
+任务行显示：
 
 - 工单号和标题。
-- 项目、定位源和唯一修改工作区。
-- 当前阶段和本阶段耗时。
-- 总尝试次数。
-- 业务结果或失败摘要。
-- Patch 路径和 MR/PR 链接摘要。
+- 所属流水线；定位源和修改工作区只在详情中显示，避免列表重复路径信息。
+- 运行中显示当前阶段与阶段耗时；终态只显示一行业务结论或失败摘要。
+- Patch 路径、Commit SHA、分支和外部链接不进入列表行。
 
 ### 20.5 任务详情
 
-任务详情按时间顺序展示：
+任务详情采用两级渐进披露，不把 AI 结论、阶段账本、Commit 元数据和文件清单塞进同一个抽屉，也不叠放两个同时存在的模态层。
 
-1. 工单快照。
-2. 路由、定位源、BaselineCohort 与冻结基线。
-3. Discovery 结论和门禁。
-4. 每次 Repair/Verify/Review 循环。
-5. 冻结修改及 Diff。
-6. 每个最终动作和每个 GitLab/GitHub 目标分支。
-7. 清理结果与外部副作用。
+**一级弹窗：任务结论**
+
+- 从任务行进入，头部只显示工单身份、标题和终态。
+- 终态任务首先显示一句结论，再依次显示“原因”和“修复方案”；每段最多两句，不生成长篇报告。
+- 验证只显示一个紧凑事实状态，例如“验证通过”或“验证失败”，不在此重复测试数量和修改文件数量。
+- 运行中的任务在同一位置显示阶段轨道；结论尚未冻结时不展示占位文案。
+- `changed` 且存在交付记录时，底部主操作为“查看交付结果”；`no_change` 或修改前失败没有空的二级入口。
+- 技术阶段、尝试、证据和原始日志仍在一级弹窗的折叠区，默认关闭。
+
+**二级弹窗：交付结果**
+
+- 点击“查看交付结果”后，用交付弹窗替换一级弹窗；不得在一级弹窗上再叠一层。关闭回到任务列表，“返回任务结论”回到一级弹窗。
+- 顶部只给最终交付状态和下一步。GitLab Push 成功时主操作是“在 GitLab 查看 Commit”；Patch 成功时是“打开目录”或“下载 Patch”。
+- 多个最终动作以紧凑结果行排列，每行只显示动作名称、结果和一个主操作；Commit SHA、远端分支、hash、幂等键进入“技术信息”折叠区。
+- GitLab Push 的用户下一步固定说明为“打开 Commit，在 GitLab Web 选择目标分支并 Cherry-pick”；平台不暗示已经合入。
+- 最后一个可见区块固定为“修改文件”，使用 `change-manifest.files` 的平台事实，不使用 Agent 自报清单。
+- 文件路径必须相对修改仓库根目录，统一 `/`，不带盘符、绝对工作区、远端分支名或仓库名。每行显示操作类型与路径；目录弱化、文件名强调，长路径中段省略，悬停可看完整值，点击复制完整相对路径。
+- 默认显示全部文件；超过 12 个时区域内部滚动并提供“复制全部路径”，不把路径清单折叠到不可发现的位置。
+
+两个弹窗都必须支持 `Esc`、明确关闭按钮、焦点圈和键盘焦点回归；切换弹窗不得引起底层任务列表滚动或布局跳变。URL 应保存当前 `taskId` 与 `view=conclusion|delivery`，刷新后恢复同一层级。
 
 失败页必须直接回答：
 
 - 在哪个阶段失败。
 - 为什么失败。
 - 已经做了什么。
-- 是否产生 Patch、分支、MR 或 PR。
+- 是否产生 Patch、GitLab 分支/Commit 或 GitHub PR。
 - 是否可重试。
 - 建议先修什么。
 
 失败交互按 failure code 给出明确主操作：
 
-- `source_mismatch` / `workspace_policy_blocked`：编辑项目并以新 TaskRun 重新运行。
+- `source_mismatch` / `workspace_policy_blocked`：编辑流水线并以新 TaskRun 重新运行。
 - `multiple_workspaces_required` / `unsupported_artifact_change` / `external_change_required`：查看定位证据和人工处理步骤，不显示无意义的“重试 Repair”。
-- MR/PR 失败且 fallback 成功：突出显示保底 Patch，并提供“仅重试失败交付”；不要求重新调用 LLM。
+- GitLab Push / GitHub PR 失败且 fallback 成功：突出显示保底 Patch，并提供“仅重试失败交付”；不要求重新调用 LLM。
 - `fallback_patch_failed`：同时展示远端失败和本地落盘失败，提供修复存储后重新生成 fallback 的无 LLM 操作。
 
-`no_change` 页面必须展示正向证据，不能只显示“没有发现问题”。
+`no_change` 的一级结论弹窗必须展示正向证据，不能只显示“没有发现问题”；它没有二级交付弹窗。
 
 ### 20.6 系统设置与当前模型
 
@@ -1474,7 +1455,7 @@ Agent Runtime、CLI binding、知识源等机器级或高级能力不单独膨�
 - 页面直接展示当前模型，不要求先进入“模型管理”弹窗。
 - 用户选择另一个模型后保存为新的 `execution.currentModelId`。
 - 不出现“添加模型”“已添加”“启用 Claude Code/Codex/OpenCode”等 Runtime 管理语义。
-- 不在 Project 编辑器中出现 Scope、Discovery、Repair、Review 四个模型下拉框。
+- 不在 Pipeline 编辑器中出现 Scope、Discovery、Repair、Review 四个模型下拉框。
 - Runtime、CLI 命令、超时等属于系统实现/高级环境配置，默认不与模型选择混排。
 - 可在模型旁显示简短能力定位和当前 Runtime 健康状态，但不堆叠价格、上下文窗、参数等非必要信息。
 
@@ -1482,20 +1463,32 @@ Agent Runtime、CLI binding、知识源等机器级或高级能力不单独膨�
 
 同一页面提供一个直观的“并行 AI 调用数”控件，默认 4，对应 `maxConcurrentLlmCalls`。它限制正在运行的 Agent 阶段，不等同于活跃任务数；界面展示当前调用槽使用量和排队量，不暴露 Runtime 分池、lease 或 semaphore 等实现术语。
 
-### 20.7 反馈源与项目配置交互
+### 20.7 流水线与工单接入交互
 
-反馈源页面直接完成真实业务配置：
+左侧不再提供独立“工单来源”入口。流水线页面以可执行线路为主体，提供次级“管理工单接入”入口；新增流水线的第一步也能原地选择或新增接入，不要求用户跨页面预配置。
+
+工单接入表单直接完成真实业务配置：
 
 - Redmine：名称、服务地址、API Token、轮询设置、测试连接。
 - TAPD：名称、工作区、账号密码或 Token、轮询设置、测试连接。
 - Token/密码输入框保存后清空，只显示“已配置”；不出现“凭据名称”或全局凭据卡片。
+- TicketProvider 可以被多条流水线复用。编辑时显示引用它的流水线；仍被引用时禁止删除，停用或修改连接参数前明确影响范围。
 
-新建/编辑项目使用连续四步布局，而不是让用户拼内部引用：
+“新增流水线”先填写名称和稳定 ID，再使用连续五步布局，而不是让用户拼内部引用：
 
-1. **Bug 反馈源**：选择一个已测试成功的 TAPD/Redmine 来源和路由规则。
+1. **工单入口**：选择或原地新增 TAPD/Redmine 接入，并设置匹配范围和优先级。
 2. **定位源**：选择只读调查范围，并当场测试可读性；文案明确它只用于反查，不代表实际修改目录。
 3. **修改工作区**：选择本机物理目录，立即显示自动识别结果、仓库根、remote 和健康状态；不再展示“代码类型”下拉框。
-4. **最终动作**：始终可选 Patch；根据识别结果只开放 GitLab MR 或 GitHub PR，直接配置输出目录或目标分支，支持多选动作。
+4. **验证**：配置必需验证步骤，或显式声明无自动测试及可审计替代门禁。
+5. **最终动作**：始终可选 Patch；根据识别结果只开放 GitLab Push 或 GitHub PR。公共区填写提交人，Patch 配置输出目录，GitLab Push 无目标分支，GitHub PR 配置目标分支；支持多选动作。
+
+流水线卡片必须一眼展示完整线路，而不是只展示中间两段：
+
+```text
+Haru TAPD → 客户端分析仓 → ClientLua GitLab → pytest → Patch + GitLab Push
+```
+
+卡片提供编辑、启用/停用、完整体检和“查看任务”。首次启动没有流水线时，任务空态只引导“新增第一条流水线”；流水线向导负责在内部补齐工单接入，不再要求用户先完成两个孤立步骤。
 
 Web 可能从另一台电脑访问部署机，因此“本机目录”始终指 CodeFixer 服务端所在机器的目录，不是浏览器电脑的目录。目录选择器由服务端提供受限浏览 API，只允许浏览管理员配置的根目录并返回服务端规范路径；同时保留可粘贴路径输入。不得使用浏览器文件选择器制造“选中了客户端路径但服务端不可用”的假象。
 
@@ -1514,7 +1507,7 @@ Web 可能从另一台电脑访问部署机，因此“本机目录”始终指 
 - 附件有类型、大小和数量限制。
 - 日志和 API 不回传 Token、Authorization header 或凭据文件内容。
 - Web 第一版按可信内网单管理员设计，但至少支持 IP allowlist、CSRF 防护和危险操作二次确认。
-- 删除任务默认只删除数据库索引和可安全删除的本地产物；已创建 MR/PR、远程分支和外部 Patch 不静默删除。
+- 删除任务默认只删除数据库索引和可安全删除的本地产物；已推送的 GitLab Commit/远程分支、已创建的 GitHub PR 和外部 Patch 不静默删除。
 
 ## 22. Windows 开发与 Linux 部署
 
@@ -1539,7 +1532,7 @@ Web 可能从另一台电脑访问部署机，因此“本机目录”始终指 
 
 - 代码使用 `pathlib.Path`。
 - 数据库不保存无法解释的 Windows/Linux混合路径。
-- 项目配置中的机器路径只进入本地覆盖。
+- 流水线配置中的机器路径只进入本地覆盖。
 - Agent 入口传执行机上真实绝对路径。
 - 任务包若迁移到另一台机器，必须重新物化入口路径，不能直接沿用旧绝对路径。
 
@@ -1574,7 +1567,7 @@ Windows 开发与测试
 每次任务必须可回答：
 
 - 使用了哪个工单 snapshot。
-- 使用了哪个项目配置版本。
+- 使用了哪个流水线配置版本。
 - 使用了哪个全局当前模型快照，以及解析到哪个 Runtime/实际模型。
 - 使用了哪个定位源快照、BaselineCohort，以及基于哪个代码 revision/SHA。
 - 每阶段实际由哪个 Runner/模型执行，并验证与 TaskRun 当前模型快照一致。
@@ -1582,7 +1575,7 @@ Windows 开发与测试
 - 修改了哪些文件。
 - 运行了哪些验证命令。
 - Review 为什么通过或拒绝。
-- 交付了哪些 Patch/MR/PR。
+- 交付了哪些 Patch、GitLab Commit、GitHub PR。
 - 哪些外部副作用需要清理。
 
 事件通过 WebSocket 推送；数据库保存结构化事件，详细 stdout/stderr 写文件并按大小轮转。
@@ -1595,7 +1588,7 @@ Windows 开发与测试
 - `no_change` 比例及复核通过率。
 - 首轮修复通过率。
 - 平均修复循环数。
-- Patch/GitLab MR/GitHub PR 成功率。
+- Patch / GitLab Push / GitHub PR 成功率。
 - 部分交付率。
 - 每任务 Agent 费用。
 - LLM 槽利用率、排队时长和 lease 回收次数。
@@ -1611,7 +1604,7 @@ Windows 开发与测试
 - 分布式多节点 Worker。
 - 让 Agent 自己持有平台 Token 或决定最终目标分支。
 - 把 SVN/其他 Git 的冻结修改投递到另一个 GitLab/GitHub 仓库。
-- Project/阶段级多模型编排或自动模型路由。
+- Pipeline/阶段级多模型编排或自动模型路由。
 - SVN 直接 commit。
 
 这些能力以后可通过现有接口扩展，但第一版不为它们预写无实现的 UI 或状态。
@@ -1622,7 +1615,7 @@ Windows 开发与测试
 
 - FastAPI、SQLite migration、React/Vite。
 - 默认配置、本地覆盖、Secret 引用。
-- 反馈源内联凭据、定位源、修改工作区自动识别、当前模型、最终动作管理和 Preflight。
+- Pipeline 领域模型与完整语义迁移；流水线内联工单接入、定位源、修改工作区自动识别、验证、最终动作管理和 Preflight。
 - 内部模型 Runtime 注册与 CLI binding。
 - Linux systemd 与健康检查。
 
@@ -1667,7 +1660,7 @@ Windows 开发与测试
 - 远端交付失败后的托管 fallback Patch。
 - 部分成功、幂等重试与失败清理。
 
-验收：Patch + 多目标 GitLab MR/GitHub PR 消费同一冻结修改；任一目标失败使任务失败并保留成功结果；动作只在匹配的自动识别仓库类型上可选；远端失败必有可下载的 fallback Patch，或明确记录其独立落盘失败。
+验收：Patch、单分支 GitLab Push 与多目标 GitHub PR 消费同一冻结修改；GitLab Push 返回可打开的 Commit URL，GitHub 任一目标失败使任务失败并保留成功结果；动作只在匹配的自动识别仓库类型上可选；远端失败必有可下载的 fallback Patch，或明确记录其独立落盘失败。
 
 ### 阶段六：体验与生产验收
 
@@ -1683,29 +1676,35 @@ Windows 开发与测试
 必须全部满足：
 
 1. CodeFixer 核心和公共 UI 中没有任何业务项目专属判断。
-2. Bug 反馈源、定位源和修改工作区在领域模型与 UI 中明确分离；一个任务始终只有一个修改工作区。
+2. Bug 反馈源、定位源和修改工作区在领域模型中明确分离，并在一条 Pipeline 中组装成完整线路；一个任务始终只绑定一条流水线和一个修改工作区。
 3. 平台从物理目录自动识别 SVN、GitLab Git、GitHub Git 或其他 Git，不让用户手选代码类型。
-4. 一个任务可同时配置 Patch 和与修改工作区匹配的 GitLab MR 或 GitHub PR；不匹配动作不能保存。
+4. 一个任务可同时配置 Patch 和与修改工作区匹配的 GitLab Push 或 GitHub PR；不匹配动作不能保存。
 5. Agent 只收到固定入口路径，不收到平台拼接的大上下文。
 6. Discovery 找不到或无法消歧时任务失败并给出结构化原因。
 7. `no_change` 有当前基线证据并通过独立 Review。
 8. Repair 修改越权时任务失败。
 9. 验证和 Review 未通过时不能交付。
-10. Patch 与所有 MR/PR 消费同一冻结修改。
-11. GitLab MR 是普通 MR，并按目标分支创建临时分支和 Cherry-pick commits。
-12. 任一 GitLab/GitHub 目标失败时任务失败，已成功 MR/PR 保留且可只重试失败目标。
-13. 服务重启不会重复运行同一阶段或重复创建 MR/PR。
+10. Patch、GitLab Push 与所有 GitHub PR 消费同一冻结修改和交付日志。
+11. GitLab Push 只推送受控任务分支并返回 Commit URL，不创建 MR、不选择目标分支、不配置 assignee。
+12. GitLab Push 失败或任一 GitHub 目标失败时任务失败；已成功外部结果保留，且可只重试失败交付。
+13. 服务重启不会重复运行同一阶段、覆盖远端任务分支或重复创建 GitHub PR。
 14. Windows 开发和 Linux 正式运行使用同一依赖锁，机器路径与 Secret 不进入公开仓库。
 15. Web 能清楚展示阶段、尝试、失败、无修改证据、部分交付和外部副作用。
 16. Web 与 API 的公开默认和正式部署端口统一为 `9522`。
 17. 仓库无需任何本机参考项目或参考脚本即可构建、部署和理解；所有必需依赖都有机器可读声明及 Readiness/Preflight 结果。
-18. 全局只有一个当前模型；Project 与各 LLM 阶段没有独立模型选择；同一 TaskRun 的所有 LLM 阶段使用同一模型且保持独立会话。
+18. 全局只有一个当前模型；Pipeline 与各 LLM 阶段没有独立模型选择；同一 TaskRun 的所有 LLM 阶段使用同一模型且保持独立会话。
 19. 模型选择 UI 只呈现模型，不把 Agent Runtime 当作同级模型选项，也不要求用户管理 Profile。
 20. 全局 LLM 并发池默认 4；没有任务在等待槽位时持有仓库锁或工作区 lease。
 21. 同一修改工作区在默认 2 秒窗口内进入 `prepare` 的任务共享 leader 冻结的 SHA/revision，且每个任务仍使用独立可写工作区。
 22. TAPD/Redmine 的 Token 或密码在反馈源表单内配置；日常设置页没有独立“凭据”“路径”“命令”概念。
-23. GitLab MR/GitHub PR 失败不会伪装成成功；平台从同一冻结修改生成或复用 fallback Patch，默认目录不污染被修复仓库。
+23. GitLab Push / GitHub PR 失败不会伪装成成功；平台从同一冻结修改生成或复用 fallback Patch，默认目录不污染被修复仓库。
 24. 配置、Prefab、场景和资源文件只要在修改工作区内且可安全处理，就能进入 Repair；工作区外、多工作区、策略禁止、专有二进制或外部系统修改在明确阶段以稳定失败码结束。
+25. 主导航只有任务、流水线、设置；任务页是全部流水线共享的唯一账本，支持按流水线筛选且不复制任务列表。
+26. “新增流水线”能在一个连续流程内完成工单入口、定位源、修改工程、验证和多个最终动作；没有独立“项目”或“工单来源”一级入口。
+27. 公共 Schema、API、数据库字段、失败码和类型名统一使用 Pipeline 语义，不保留 Project 兼容别名。
+28. 每个终态任务都有冻结的简洁结论；已修复任务从一级结论弹窗进入替换式二级交付弹窗，界面不叠加模态层。
+29. 二级交付弹窗末尾展示来自 `change-manifest` 的完整修改路径清单；所有路径相对仓库根目录、可复制且不含分支名或本机绝对路径。
+30. TAPD Bug、TAPD 其他单与 Redmine 的日志映射符合第 13.3 节；Patch 文件名、GitLab Commit 和默认 GitHub PR 标题复用同一冻结日志。
 
 ## 27. 规范标识与关键定义
 
@@ -1737,7 +1736,7 @@ finalize
 ### 27.2 TaskRun 创建时点与当前模型生效时点
 
 - 待我开始模式：用户点击开始时创建 TaskRun，并立即冻结 `execution_mode_snapshot`，状态为 `queued`。
-- 全自动模式：工单通过唯一项目路由后立即创建 TaskRun，状态为 `queued`。
+- 全自动模式：工单通过唯一流水线路由后立即创建 TaskRun，状态为 `queued`。
 - TaskRun 被 Worker 领取后才执行 `prepare`；`prepare` 获取当时最新工单、代码基线并解析当时的 `execution.currentModelId`。
 - 当前模型一旦为该 TaskRun 解析完成，本次运行后续所有 LLM 阶段固定使用该模型；运行中全局切换不影响它。
 - queued 但尚未开始执行的 TaskRun 不提前冻结模型，因此用户切换当前模型后，这些后续开始执行的 Run 使用新模型。
@@ -1748,14 +1747,14 @@ finalize
 `input_fingerprint` 是以下值按规范 JSON 排序后计算的 SHA-256：
 
 - TicketSnapshot 内容 hash。
-- 项目有效配置 hash。
+- 流水线有效配置 hash。
 - LocalizationSource ID/内容版本。
 - ModificationWorkspace identity、BaselineCohort ID 与冻结 revision/SHA。
 - 阶段协议版本。
 - TaskRun 当前模型快照：`currentModelId`、实际模型、Runtime 和影响调用语义的参数。
 - 前序必需 Artifact 的 hash。
 
-某项变化会使依赖它的安全检查点失效。Project 不再通过阶段 Agent Profile 参与指纹；模型变化通过全局当前模型快照进入指纹。
+某项变化会使依赖它的安全检查点失效。Pipeline 不再通过阶段 Agent Profile 参与指纹；模型变化通过全局当前模型快照进入指纹。
 
 ### 27.4 安全检查点
 
@@ -1781,7 +1780,7 @@ task_run_id / change_version / action_id / action_version / target_key
 
 - `localization_snapshot`：定位 Agent 实际读取的只读定位源版本或内容 hash。
 - `modification_base`：BaselineCohort 冻结、Repair 实际读取和修改的 Git/SVN revision。
-- `delivery_target_head`：每个 GitLab/GitHub 目标分支在 `pre_delivery_check` 记录的 HEAD。
+- `delivery_target_head`：每个 GitHub PR 目标分支在 `pre_delivery_check` 记录的 HEAD；GitLab Push 改为记录计划任务分支与预期 Commit SHA。
 
 三者必须分别记录，不能用一个 `base_branch` 字段混用。
 
@@ -1885,11 +1884,11 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
   "schema_version": 1,
   "decision": "located|no_change_claim|unresolved",
   "localization_source": {
-    "id": "project-locator",
+    "id": "pipeline-locator",
     "snapshot": "version or content hash"
   },
   "modification_workspace": {
-    "id": "project-workspace",
+    "id": "pipeline-workspace",
     "baseline_cohort_id": "cohort-id",
     "revision": "frozen revision"
   },
@@ -1941,7 +1940,7 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
   "schema_version": 1,
   "reason": "already_fixed|not_present_on_current_baseline|not_applicable_to_workspace|upstream_fixed_during_run",
   "modification_workspace": {
-    "id": "project-workspace",
+    "id": "pipeline-workspace",
     "revision": "revision"
   },
   "claim": "为什么当前基线无需修改",
@@ -1977,6 +1976,8 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
   "schema_version": 1,
   "outcome": "changed|no_valid_diff|blocked",
   "summary": "本次修改说明",
+  "module_name": "一键培养目标总览",
+  "change_summary": "阵容卡片匹配度修复",
   "blocking_code": null,
   "blocking_evidence_ids": [],
   "changed_paths_claimed": ["relative/path"],
@@ -1985,7 +1986,7 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
 }
 ```
 
-平台自行采集真实 diff；`changed_paths_claimed` 只用于交叉检查。`outcome=blocked` 时 `blocking_code` 必须是第 6.5 节允许的稳定失败码，且 `blocking_evidence_ids` 非空；`outcome=changed` 时两者必须为空。
+平台自行采集真实 diff；`changed_paths_claimed` 只用于交叉检查。`module_name` 和 `change_summary` 只在 `outcome=changed` 时必填，分别是交付日志中的简短模块名和修改摘要，不得包含固定前缀、工单号、提交人或换行。`outcome=blocked` 时 `blocking_code` 必须是第 6.5 节允许的稳定失败码，且 `blocking_evidence_ids` 非空；`outcome=changed` 时两者必须为空。
 
 ### 29.6 verification.json
 
@@ -2031,14 +2032,48 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
 
 `mode=no_change` 不允许 `needs_repair`；证据不足直接 rejected。
 
-### 29.8 change-manifest.json
+### 29.8 task-conclusion.json
+
+```json
+{
+  "schema_version": 1,
+  "outcome": "changed|no_change|blocked|failed",
+  "headline": "已修复阵容卡片匹配度异常",
+  "cause": "卡片排序直接使用角色战力，没有应用培养目标权重。",
+  "resolution": "统一改用目标匹配度排序，并补充空阵容保护。"
+}
+```
+
+`headline`、`cause`、`resolution` 都是面向任务一级弹窗的短文本：标题一句，原因和方案各不超过两句。`changed` 结论由最终 Repair 结果与 Review 共同约束并在 Review 通过后冻结；`no_change` 必须引用通过门禁的正向证据；修改前失败或取消由平台根据稳定 failure code 生成同结构的可读结论，不要求额外调用 LLM。验证状态、文件数量和交付链接不写进这三段，分别使用真实 verification、change manifest 和 delivery result 展示。
+
+### 29.9 delivery-metadata.json
+
+```json
+{
+  "schema_version": 1,
+  "conventional_type": "fix",
+  "technology_tag": "Lua",
+  "ticket_key": "B1250062",
+  "branch_label": "主干",
+  "version_label": "v4.8",
+  "module_name": "一键培养目标总览",
+  "change_summary": "阵容卡片匹配度修复",
+  "submitter_name": "黄永熙",
+  "commit_subject": "fix：【Lua】【#B1250062】【主干】【v4.8】一键培养目标总览 - 阵容卡片匹配度修复  提交人：黄永熙",
+  "patch_filename": "fix：【Lua】【#B1250062】【主干】【v4.8】一键培养目标总览 - 阵容卡片匹配度修复  提交人：黄永熙.patch"
+}
+```
+
+平台根据工单类型、流水线配置和已 Review 的 Repair 字段拼装并冻结；Agent 不直接提供 `commit_subject` 或 `patch_filename`。文件名净化后值必须一并冻结，保证普通 Patch、fallback Patch 和重试一致。
+
+### 29.10 change-manifest.json
 
 ```json
 {
   "schema_version": 1,
   "change_version": 1,
   "modification_workspace": {
-    "id": "project-workspace",
+    "id": "pipeline-workspace",
     "baseline_cohort_id": "cohort-id",
     "base_revision": "revision"
   },
@@ -2060,30 +2095,38 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
 }
 ```
 
-`source_commits` 可为空。GitLab MR / GitHub PR 的 delivery commits 属于动作结果，不改变本对象。
+`source_commits` 可为空。GitLab Push / GitHub PR 的 delivery commits 属于动作结果，不改变本对象。`files[].path` 是二级交付弹窗“修改文件”的唯一事实来源，必须是相对修改仓库根目录的规范化路径，不带分支名。
 
-### 29.9 delivery result
+### 29.11 delivery result
 
 `DeliveryActionRun`：
 
 ```json
 {
   "schema_version": 1,
-  "action_id": "main-gitlab-mr",
+  "action_id": "gitlab-push",
   "action_version": 1,
   "change_version": 1,
-  "type": "patch|gitlabMr|githubPr|fallbackPatch",
+  "type": "patch|gitlabPush|githubPr|fallbackPatch",
   "status": "pending|running|reconciling|succeeded|failed|skipped",
   "outcome": "success|partial_success|failure|no_change",
   "triggeredBy": [],
   "reusedActionId": null,
-  "delivery_commits": [],
+  "delivery_commits": [
+    {
+      "sha": "commit sha",
+      "subject": "冻结的标准交付日志",
+      "remote_branch": "codefixer/B1250062/run-short-id",
+      "commit_url": "https://gitlab.example/group/project/-/commit/sha",
+      "branch_url": "https://gitlab.example/group/project/-/tree/codefixer/B1250062/run-short-id"
+    }
+  ],
   "targets": [],
   "failure": null
 }
 ```
 
-`DeliveryTargetRun`：
+`DeliveryTargetRun` 只供仍具有目标分支语义的 `githubPr` 使用；`gitlabPush` 不创建 target row：
 
 ```json
 {
@@ -2094,14 +2137,14 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
   "checkpoint": "planned|branch_intent|branch_confirmed|cherry_pick_intent|cherry_pick_confirmed|review_intent|review_confirmed",
   "source_branch": null,
   "target_branch": "target-branch",
-  "review_kind": "gitlabMr|githubPr",
+  "review_kind": "githubPr",
   "review_number": null,
   "review_url": null,
   "failure": null
 }
 ```
 
-### 29.10 final-result.json
+### 29.12 final-result.json
 
 ```json
 {
@@ -2113,6 +2156,8 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
   "delivery_outcome": "success|partial_success|failure|fallback_available|fallback_failed 或 null",
   "change_version": "整数或 null",
   "summary": "用户可读总结",
+  "conclusion_artifact": "task-conclusion.json 或 null",
+  "delivery_metadata_artifact": "delivery-metadata.json 或 null",
   "failure": null,
   "artifacts": [],
   "side_effects": []
@@ -2133,9 +2178,9 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
 
 共享检查任一项失败时没有动作可以开始。此时仍允许回到 Repair/Verify/Review 或转为有证据的 `no_change`。
 
-共享检查通过后，每个动作独立检查并记录：Patch 输出目录；GitLab/GitHub remote、目标分支、写权限、创建 MR/PR 能力和本机认证；每个远端目标的 `delivery_target_head`。动作 Preflight 失败时该动作/目标直接进入终态 `failed`，其他通过检查的动作继续执行。未开始的失败动作没有外部副作用，但只要 `freeze_change` 存在且失败的是远端动作，仍按第 14.3 节生成 fallback。
+共享检查通过后，每个动作独立检查并记录：Patch 输出目录；GitLab remote 与受控分支 push 权限；GitHub remote、目标分支、PR 创建能力和本机认证；每个 GitHub 目标的 `delivery_target_head` 以及 GitLab Push 的预期 Commit SHA。动作 Preflight 失败时该动作/目标直接进入终态 `failed`，其他通过检查的动作继续执行。未开始的失败动作没有外部副作用，但只要 `freeze_change` 存在且失败的是远端动作，仍按第 14.3 节生成 fallback。
 
-项目本来就未通过保存时 Preflight 时不得启动 TaskRun，也不存在可供 fallback 的冻结修改。运行期间才出现的动作依赖失败则属于交付失败。普通 Patch 若已通过自己的 Preflight，必须正常执行；若失败远端动作最终需要 fallback，先尝试复用这个普通 Patch。
+流水线本来就未通过保存时 Preflight 时不得启动 TaskRun，也不存在可供 fallback 的冻结修改。运行期间才出现的动作依赖失败则属于交付失败。普通 Patch 若已通过自己的 Preflight，必须正常执行；若失败远端动作最终需要 fallback，先尝试复用这个普通 Patch。
 
 ### 30.2 动作聚合
 
@@ -2171,9 +2216,9 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
 6. 托管平台查询不可用或认证失效时保持 reconciling；超过对账预算后以对应的 `*_result_uncertain` 失败，仍禁止重复创建。
 7. 只有适配器能够完整证明不存在对应外部对象时，才允许新建；GitLab push 结果不确定时不能满足此条件。
 
-临时分支名虽然复刻 `cherry-pick-<sha>` 规则，但所有权由数据库 intent、project、目标分支、创建时间和分支 HEAD 联合证明。不能仅凭名称删除分支。
+临时分支名虽然复刻 `cherry-pick-<sha>` 规则，但所有权由数据库 intent、pipeline、目标分支、创建时间和分支 HEAD 联合证明。不能仅凭名称删除分支。
 
-推送前先持久化预期临时分支、目标 HEAD、冻结 diff hash 和预期 commit 元数据。若 push 成功但确认结果未落库，平台只按数据库 intent 对账同一修改工作区的 remote branch；ref 内容不同即失败，禁止覆盖。所有目标完成后按项目保留策略清理临时分支；清理失败只设置 `cleanup_required`，不得改写已经确认的 MR/PR 结果。
+推送前先持久化预期远端分支、GitHub 目标 HEAD、冻结 diff hash 和预期 Commit 元数据。若 push 成功但确认结果未落库，平台只按数据库 intent 对账同一修改工作区的 remote branch；ref 内容不同即失败，禁止覆盖。GitLab 任务分支在成功后保留供人工 Cherry-pick；GitHub 临时分支按流水线保留策略清理。清理失败只设置 `cleanup_required`，不得改写已经确认的外部结果。
 
 ### 30.5 Patch 对账
 
@@ -2194,10 +2239,10 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
 
 | 阶段 | 模型 / 会话 | 必须自行读取 | 可访问代码 | 写入范围 |
 |---|---|---|---|---|
-| `scope_discovery` | TaskRun 当前模型 · 独立会话 | ticket、project policy、localization manifest、附件清单 | 定位源只读视图、受控知识工具 | scope-discovery 输出目录 |
-| `discovery` | TaskRun 当前模型 · 独立会话 | ticket、project policy、localization/workspace manifest、附件清单、scope-discovery 产物 | 定位源只读视图与修改工作区只读基线视图 | discovery 输出目录 |
+| `scope_discovery` | TaskRun 当前模型 · 独立会话 | ticket、pipeline policy、localization manifest、附件清单 | 定位源只读视图、受控知识工具 | scope-discovery 输出目录 |
+| `discovery` | TaskRun 当前模型 · 独立会话 | ticket、pipeline policy、localization/workspace manifest、附件清单、scope-discovery 产物 | 定位源只读视图与修改工作区只读基线视图 | discovery 输出目录 |
 | `no_change_verify` | TaskRun 当前模型 · 独立只读会话 | ticket、Discovery、workspace manifest | 修改工作区只读基线视图、验证工具 | no-change 输出目录 |
-| `repair` | TaskRun 当前模型 · 独立写会话 | ticket、Discovery、project policy、workspace manifest、上轮反馈 | 唯一隔离工作区 | 隔离工作区与 repair 输出目录 |
+| `repair` | TaskRun 当前模型 · 独立写会话 | ticket、Discovery、pipeline policy、workspace manifest、上轮反馈 | 唯一隔离工作区 | 隔离工作区与 repair 输出目录 |
 | `review(mode=change)` | TaskRun 当前模型 · 独立只读会话 | ticket、Discovery、候选 diff、verification | 候选工作区只读视图 | review 输出目录 |
 | `review(mode=no_change)` | TaskRun 当前模型 · 独立只读会话 | ticket、Discovery、no-change report、证据索引 | 修改工作区只读基线视图 | review 输出目录 |
 

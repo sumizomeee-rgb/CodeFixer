@@ -20,6 +20,14 @@ const profileLabel = (profile:AgentProfileConfig) => {
   const known = agentChoices.find(item => item.id === profile.id || item.model === profile.model)
   return known?.label ?? `${runtimeLabel(profile.runtime)}${profile.model ? ` · ${profile.model}` : ''}`
 }
+const dependencyLabel:Record<string,string>={
+  'claude-code-cli':'Claude Code CLI',
+  'codex-cli':'Codex CLI',
+  'opencode-cli':'OpenCode CLI',
+  'git-cli':'Git 命令行',
+  'svn-cli':'SVN 命令行',
+  'python-runtime':'Python 运行时',
+}
 
 function AgentMark({ runtime }:{ runtime:AgentRuntime }) {
   if (runtime === 'claudeCode') return <span className="runtime-mark runtime-claudeCode" aria-hidden="true"><svg viewBox="0 0 32 32"><path d="M16 4v24M7.5 7.5l17 17M4 16h24M7.5 24.5l17-17"/><path d="M10.2 4.8l11.6 22.4M4.8 10.2l22.4 11.6M4.8 21.8l22.4-11.6M10.2 27.2L21.8 4.8"/></svg></span>
@@ -33,6 +41,12 @@ export function SettingsPage({ onModeChanged }:{ onModeChanged:(mode:ExecutionMo
   const [notice,setNotice] = useState('')
   const [error,setError] = useState('')
   const [busy,setBusy] = useState(false)
+
+  useEffect(() => {
+    if (!notice) return
+    const timer = window.setTimeout(() => setNotice(''), 3200)
+    return () => window.clearTimeout(timer)
+  }, [notice])
 
   const refreshReadiness = async () => setReadiness(await api.readiness())
   const load = async () => {
@@ -81,8 +95,8 @@ export function SettingsPage({ onModeChanged }:{ onModeChanged:(mode:ExecutionMo
   const llmConcurrency = settings.config.execution.maxConcurrentLlmCalls ?? 4
 
   return <section className="page-stack settings-page">
-    <div className="page-heading"><div><h1>设置</h1><p>控制平台运行节奏、当前模型和并发容量。</p></div></div>
-    {notice && <button className="notice-strip success-note" onClick={() => setNotice('')}>{notice}</button>}
+    <div className="page-heading"><div><span className="page-kicker">CONTROL PARAMETERS</span><h1>设置</h1><p>控制平台运行节奏、当前模型和并发容量。</p></div></div>
+    {notice && <div className="toast settings-toast" role="status">{notice}</div>}
     {error && <button className="notice-strip error-note" onClick={() => setError('')}>{error}</button>}
 
     <div className="settings-grid simplified-settings control-grid">
@@ -90,9 +104,9 @@ export function SettingsPage({ onModeChanged }:{ onModeChanged:(mode:ExecutionMo
 
       <article className="settings-card control-card settings-agents"><header><span className="card-index">02</span><div><small>MODEL</small><h2>当前模型</h2></div></header><p>双 Agent 定位与修复阶段统一使用这个模型，切换后对新调用生效。</p><div className="current-model-control"><AgentMark runtime={currentRuntime}/><label><select aria-label="当前模型" disabled={busy} value={currentProfile ? settings.config.execution.currentModelId : ''} onChange={e => {const choice = agentChoices.find(item => item.id === e.target.value); if (choice) void chooseModel(choice)}}><option value="" disabled>选择模型</option>{currentProfile && !currentChoice && <option value={currentProfile.id}>{profileLabel(currentProfile)}</option>}{agentChoices.map(choice => <option key={choice.id} value={choice.id}>{choice.label}</option>)}</select><small>{currentChoice?.note ?? (currentProfile ? '兼容自定义模型配置' : '选择模型后即可运行 Agent 阶段')}</small></label><span className={`profile-health ${currentHealth}`} title="当前模型运行时状态"/></div></article>
 
-      <article className="settings-card control-card concurrency-card"><header><span className="card-index">03</span><div><small>CAPACITY</small><h2>AI 并发池</h2></div></header><p>限制全平台同时运行的 LLM 调用数。任务可以更多，但会在 Agent 阶段公平排队。</p><div className="concurrency-control"><button aria-label="减少并发" disabled={busy || llmConcurrency <= 1} onClick={() => void saveLlmConcurrency(llmConcurrency - 1)}>−</button><div><strong>{llmConcurrency}</strong><span>个并行调用</span></div><button aria-label="增加并发" disabled={busy || llmConcurrency >= 64} onClick={() => void saveLlmConcurrency(llmConcurrency + 1)}>+</button></div><div className="capacity-scale"><span className={llmConcurrency <= 2 ? 'active' : ''}>保守</span><i/><span className={llmConcurrency > 2 && llmConcurrency <= 6 ? 'active' : ''}>均衡</span><i/><span className={llmConcurrency > 6 ? 'active' : ''}>高吞吐</span></div></article>
+      <article className="settings-card control-card concurrency-card"><header><span className="card-index">03</span><div><small>CAPACITY</small><h2>AI 并发池</h2></div></header><p>限制全平台同时运行的 LLM 调用数。任务可以更多，但会在 Agent 阶段公平排队。</p><div className="concurrency-control"><button aria-label="减少并发" disabled={busy || llmConcurrency <= 1} onClick={() => void saveLlmConcurrency(llmConcurrency - 1)}>−</button><div><strong>{llmConcurrency}</strong><span>个并行调用</span></div><button aria-label="增加并发" disabled={busy || llmConcurrency >= 64} onClick={() => void saveLlmConcurrency(llmConcurrency + 1)}>+</button></div><div className="capacity-meter" aria-label={`当前并发容量 ${llmConcurrency}`}>{Array.from({length:8},(_,index)=><i className={index<llmConcurrency?'active':''} key={index}/>)}</div><div className="capacity-scale"><span className={llmConcurrency <= 2 ? 'active' : ''}>保守</span><i/><span className={llmConcurrency > 2 && llmConcurrency <= 6 ? 'active' : ''}>均衡</span><i/><span className={llmConcurrency > 6 ? 'active' : ''}>高吞吐</span></div></article>
 
-      <article className="settings-card control-card settings-environment"><header><span className="card-index">04</span><div><small>HEALTH</small><h2>运行环境</h2></div><button className="ghost framed" disabled={!readiness} onClick={() => void refreshReadiness()}>{readiness ? '重新检查' : '检查中…'}</button></header><p>这里只显示当前配置真正会用到的依赖；未启用的工具不会制造黄灯。</p><div className="readiness-summary"><strong className={readiness?.status ?? 'checking'}>{readiness?.status === 'ready' ? '环境正常' : readiness?.status === 'warning' ? '可运行，有建议项' : readiness?.status === 'not_ready' ? '存在阻断' : '正在检查'}</strong><span>{readiness ? `${coreChecks.filter(item => item.status === 'ready').length}/${coreChecks.length} 项核心正常` : '正在验证本机环境'}</span></div><div className="dependency-grid relevant-dependencies">{relevantChecks.map(item => <div className={`dependency-row ${item.status}`} key={item.id}><i/><div><b>{item.dependencyId}</b><small>{item.summary}</small></div><span>{item.status === 'ready' ? '可用' : item.status === 'failed' ? '阻断' : '注意'}</span></div>)}{readiness && relevantChecks.length === 0 && <div className="all-clear">当前没有额外命令依赖。</div>}</div></article>
+      <article className="settings-card control-card settings-environment"><header><span className="card-index">04</span><div><small>HEALTH</small><h2>运行环境</h2></div><button className="ghost framed" disabled={!readiness} onClick={() => void refreshReadiness()}>{readiness ? '重新检查' : '检查中…'}</button></header><p>这里只显示当前配置真正会用到的依赖；未启用的工具不会制造黄灯。</p><div className="readiness-summary"><strong className={readiness?.status ?? 'checking'}>{readiness?.status === 'ready' ? '环境正常' : readiness?.status === 'warning' ? '可运行，有建议项' : readiness?.status === 'not_ready' ? '存在阻断' : '正在检查'}</strong><span>{readiness ? `${coreChecks.filter(item => item.status === 'ready').length}/${coreChecks.length} 项核心正常` : '正在验证本机环境'}</span></div><div className="dependency-grid relevant-dependencies">{relevantChecks.map(item => <div className={`dependency-row ${item.status}`} key={item.id}><i/><div><b>{dependencyLabel[item.dependencyId??'']??item.dependencyId}</b><small>{item.summary}<code>{item.dependencyId}</code></small></div><span>{item.status === 'ready' ? '可用' : item.status === 'failed' ? '阻断' : '注意'}</span></div>)}{readiness && relevantChecks.length === 0 && <div className="all-clear">当前没有额外命令依赖。</div>}</div></article>
     </div>
   </section>
 }

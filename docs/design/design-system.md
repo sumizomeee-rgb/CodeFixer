@@ -1,7 +1,7 @@
 # CodeFixer Web 设计系统与交互规范
 
-> 文档状态：V1
-> 最后更新：2026-08-12
+> 文档状态：V2 · Industrial Repair Ledger
+> 最后更新：2026-08-13
 > 关联：`docs/design-spec.md`、`docs/engineering-readiness-spec.md`
 
 ## 1. 设计目标
@@ -23,9 +23,9 @@ CodeFixer 的 Web 不是传统 CRUD Admin，也不是“AI 聊天窗口 + 日志
 - 明/暗主题都成立。
 - 动效服务于状态理解，不做装饰性炫技。
 
-## 2. 视觉概念：Repair Signal System
+## 2. 视觉概念：Industrial Repair Ledger
 
-CodeFixer 使用一套“Repair Signal”视觉语言。
+CodeFixer 是一台无人值守的修复机床，也是一本保存每次处理证据的维修账。它使用一套“Repair Signal”视觉语言，把持续收单、机器施工、变更封存串成同一条叙事。
 
 核心不是拟物化扳手或机器人，而是：
 
@@ -35,8 +35,12 @@ CodeFixer 使用一套“Repair Signal”视觉语言。
 - 外部副作用的“越界输出”语义。
 - 可追踪的证据引用。
 - 局部扫描/脉冲动效。
+- 账本式横线、固定栏目与左侧状态边。
+- 铭牌式微标签与对齐的机器数据。
 
 品牌感来自结构、节奏和状态表达，而不是大面积插画。
+
+视觉锚点是示波器、维修台账和机床铭牌。明确排除蓝紫玻璃拟态、满屏柔和卡片、拟物齿轮与无意义装饰动画。
 
 ### 2.1 视觉关键词
 
@@ -52,7 +56,7 @@ CodeFixer 使用一套“Repair Signal”视觉语言。
 
 ## 3. 色彩系统
 
-所有颜色必须通过 semantic token 使用，组件禁止直接写业务色值。
+所有产品语义颜色必须通过 semantic token 使用，组件禁止直接写业务状态色值。第三方来源/Agent 可在小面积识别标记内保留受控品牌色，但不得代替健康状态色。
 
 ### 3.1 Neutral
 
@@ -134,21 +138,22 @@ status-side-effect    #C258A0
 
 ### 4.1 字体角色
 
-- UI 正文：系统无衬线优先，中文与英文保持稳定字宽。
-- 数据/代码/SHA/耗时：等宽字体。
-- 标题不用过度粗黑；通过空间和层级建立权重。
+- UI 正文与中文标题：仓库内依赖的 `Noto Sans SC`，英文回退/搭配 `IBM Plex Sans`。
+- 数据、代码、SHA、耗时、ID 与机器微标签：`IBM Plex Mono`。
+- 中文不使用负字距，也不强行套用不含中文字形的 Mono；英文机器标签可使用 `.12em–.16em` 字距。
+- 字体随前端依赖打包，禁止依赖部署机预装字体或运行时外部 CDN。
 
 ### 4.2 Type Scale
 
 ```text
-display        32/38, 650
-page-title     24/30, 650
-section-title  16/22, 650
-body           14/20, 450
-body-strong    14/20, 600
-caption        12/17, 500
-micro          11/15, 550
-mono           12/18, 500
+display        36/43, 600
+page-title     30/36, 600
+section-title  18/24, 600
+body           14/22, 400
+body-strong    14/22, 600
+caption        12/18, 500
+micro          10/14, 600（全站可见文字下限）
+mono           11/17, 500
 ```
 
 ### 4.3 Tabular Data
@@ -192,14 +197,13 @@ mono           12/18, 500
 └────────────┴───────────────────────────────────────────────┘
 ```
 
-左侧导航不是宽大的传统 Sidebar。
+左侧导航是固定的文字信号栏，不依赖 hover 才能理解：
 
-建议：
-
-- 常态 72px icon rail。
-- hover/focus 可显示 label。
-- 需要长时间配置时可固定展开到 216px。
-- 内容区宽度充分留给 timeline/diff。
+- `>1080px`：188px，图标与文字始终可见。
+- `721–1080px`：78px，图标与短文字上下排列，不能只剩无文字图标。
+- `≤720px`：底部三项 tabbar（任务 / 流水线 / 设置），内容区必须预留其高度与安全区。
+- 健康心跳放在侧栏底部；顶部保留品牌、全局授权模式和主题控制。
+- 内容区宽度充分留给 timeline/diff，背景可使用低对比 32px 工程格线，不使用噪点贴图。
 
 顶部全局模式控制器始终具有强识别，但不应像危险的巨大红色按钮长期抢占视线。
 
@@ -211,7 +215,7 @@ StageRail 是 CodeFixer 最重要的产品视觉组件。
 
 ### 6.1 信息
 
-每个节点可表达：
+业务主轨固定为八个可理解阶段：准备、范围、定位、评估、修复、验证、复核、交付。每个节点可表达：
 
 - stage ID。
 - 状态。
@@ -221,6 +225,8 @@ StageRail 是 CodeFixer 最重要的产品视觉组件。
 - 是否产生 Artifact。
 - 是否发生 repair loop。
 - 是否有 failure/side effect。
+
+`workspace_prepare`、`no_change_verify`、`pre_delivery_check`、`freeze_change` 等技术阶段不得丢失，但进入任务详情的“原始阶段”账本；关键分支另外通过 NoChangeSurface / FrozenChange 表达。不得为了技术完整性把主轨压成十二个难以阅读的节点。
 
 ### 6.2 形态
 
@@ -301,7 +307,7 @@ Repair loop ×2
 必须先打开确认 sheet/dialog，展示：
 
 - 将进入队列的任务数量。
-- 当前 ready/not-ready 项目数量。
+- 当前 ready/not-ready 流水线数量。
 - 并发上限。
 - 不会绕过验证与 Review。
 
@@ -317,31 +323,28 @@ Repair loop ×2
 新任务将等待开始 · 3 个已授权任务继续运行
 ```
 
-## 8. TaskCard
+## 8. 任务行与两级结果弹窗
 
-任务卡必须首先回答：
+任务行必须首先回答：
 
 1. 这是什么 Bug？
 2. 现在在哪？
 3. 是否需要我处理？
-4. 已经产生什么交付/副作用？
+4. 终态结论是什么？
 
 结构建议：
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│ #248625  商城礼包购买后红点未刷新         RUNNING  │
-│ Product/Lua · SVN source                            │
-│                                                     │
-│ ●━━●━━◉──○──○                     Repair  02:41     │
-│                                                     │
-│ Repair loop 1 · 2 files candidate · Claude          │
-│                                                     │
-│ Patch —   MR —                         [查看详情 →] │
-└─────────────────────────────────────────────────────┘
+状态       工单与标题                              进展
+处理中     #248625  商城礼包购买后红点未刷新       Repair · 02:41  →
+已完成     #248626  阵容卡片匹配度异常             已修复          →
 ```
 
-卡片不能塞完整日志。
+任务列表不显示 Patch 路径、Commit SHA、远端分支或文件清单。点击任务行打开一级“任务结论”弹窗；已修复任务从一级弹窗再进入替换式二级“交付结果”弹窗，禁止两个模态层叠放。
+
+一级弹窗阅读顺序固定为：结论、原因、修复方案、验证状态。每段只承载一个问题，原因和方案各不超过两句。运行中则显示阶段轨道，不生成虚假结论占位。
+
+二级弹窗顶部只突出交付状态与下一步，动作结果使用紧凑行；SHA、分支、hash 等进入技术折叠区。最后固定展示相对仓库根目录的“修改文件”清单。
 
 失败卡优先替换中部信息为：
 
@@ -372,14 +375,14 @@ FailureSurface 是标准产品组件。
 例如：
 
 ```text
-MR 创建结果不确定
-当前不能安全重试创建请求。
+GitLab 推送结果不确定
+当前不能安全重推同名任务分支。
 
 可能存在：
-  branch  cherry-pick-a81c3312
-  MR      未确认
+  branch  codefixer/B1250062/a81c3312
+  commit  a81c3312（未确认远端可达）
 
-系统将继续对账；请不要手工重复创建。
+系统将继续按远端分支 SHA 对账；请不要手工覆盖。
 ```
 
 ## 10. NoChangeSurface
@@ -444,26 +447,38 @@ Patch 是本地 Artifact。
 - created time。
 - download/open action。
 
-### 12.2 GitLab MR
+### 12.2 GitLab Push
 
-一个 action 下多个 target：
+一个动作只有一个远端任务分支和一个交付 Commit：
 
 ```text
-GitLab MR
-├─ trunk        ✓ !4821
-├─ v4.7_m       ✓ !4823
-└─ release      ✕ cherry-pick conflict
+推送到 GitLab                         已完成
+在 GitLab 查看 Commit  →
+下一步：在 GitLab Web 选择目标分支并 Cherry-pick
 ```
 
-如果部分成功：
+不要在可见主层重复显示 SHA、分支名和 Commit URL；它们进入“技术信息”，主操作本身链接到 Commit。GitLab Push 没有 assignee、目标分支和部分成功。
 
-顶部状态是 Failed / Partial delivery。
+### 12.3 修改文件
 
-成功对象保持可点击，不因为父任务失败而降成灰色不可见。
+二级交付弹窗最后固定展示：
 
-### 12.3 Side Effects
+```text
+修改文件 · 3
+M  Script/Module/TargetOverview.lua
+M  Script/Module/FormationCard.lua
+A  Test/Module/FormationCardTest.lua
+```
 
-远程 branch、MR、materialization ref 都可以进入 SideEffectList。
+- 路径相对仓库根目录，不带分支名、仓库名或本机盘符。
+- 目录使用弱化文字，文件名保持主文字；统一 `/`。
+- 长路径中段省略但保留完整可复制值；悬停显示完整路径。
+- 点击复制完整路径，并用不改变控件高度的原位反馈提示成功。
+- 超过 12 行时列表内部滚动，同时提供“复制全部路径”。
+
+### 12.4 Side Effects
+
+远程 branch、Commit、GitHub PR、materialization ref 都可以进入 SideEffectList。
 
 Side effect ≠ error；它描述已经发生且需要审计的外部事实。
 
@@ -537,6 +552,8 @@ spring-like 仅用于小范围 mode/rail，不使用真实弹簧过冲影响可�
 - 新事件进入 timeline 可使用轻微 translate + fade。
 - 失败不 shake 整个页面。
 
+第一版只实现四类有业务含义的运动：运行节点呼吸、对账信号沿轨道行进、Frozen Change 状态硬化、Drawer/Dialog/Toast 进入退出。不得按动画数量凑验收指标；空闲页除侧栏低频心跳外保持静止。
+
 ## 16. Surface 与圆角
 
 避免“满屏圆角卡片”。
@@ -544,15 +561,15 @@ spring-like 仅用于小范围 mode/rail，不使用真实弹簧过冲影响可�
 建议：
 
 ```text
-radius-xs   4
-radius-sm   7
-radius-md   10
-radius-lg   14
+radius-sharp   3
+radius-sm      7
+radius-md      11
+radius-overlay 16
 ```
 
 大多数工作区使用 `sm/md`。
 
-只有 Dialog、浮层、模式控制器可用 `lg`。
+只有 Dialog、浮层使用 `overlay`。`999px` 只允许执行模式控制器；状态标识和列表行不得做成胶囊。
 
 列表中的连续信息优先通过线、分组和间距组织，不把每一行包进独立胶囊。
 
@@ -590,8 +607,8 @@ radius-lg   14
 ### 没有任务
 
 ```text
-暂无 Bug 任务
-工单轮询正常 · 上次检查 18 秒前
+这本任务账还是空的
+界面更新于 18 秒前 · 新问题进入后会出现在这里
 ```
 
 ### 没有失败
@@ -600,14 +617,14 @@ radius-lg   14
 当前没有需要处理的失败
 ```
 
-### Provider 未配置
+### 流水线未配置
 
 给具体下一步：
 
 ```text
-还没有工单来源
-添加 Redmine 或 TAPD 后 CodeFixer 才能收录任务。
-[添加工单来源]
+还没有可以收问题的流水线
+新增流水线时可以直接接入 Redmine 或 TAPD，并继续配置定位、修改、验证和交付。
+[新增流水线]
 ```
 
 ## 20. Loading
@@ -672,10 +689,9 @@ Dialog 必须说出结果，不写：
 ```text
 light
 dark
-system
 ```
 
-用户选择保存在浏览器。
+主题控制器只在浅色与深色之间切换，点击一次必须立即得到相反主题；用户选择保存在浏览器。这里不提供“跟随系统”第三态，避免控制结果不确定。
 
 主题切换不能刷新页面。
 
@@ -686,16 +702,14 @@ Design Token 使用 CSS custom properties；组件禁止在 JSX 中通过三元�
 第一版至少冻结：
 
 ```text
-dashboard-light
-dashboard-dark
 task-list-running
 task-list-failed
 task-detail-changed
 task-detail-no-change
 task-detail-repair-loop
 task-detail-partial-delivery
-project-preflight-ready
-project-preflight-failed
+pipeline-preflight-ready
+pipeline-preflight-failed
 execution-mode-confirm
 ```
 
@@ -709,6 +723,8 @@ execution-mode-confirm
 - 固定字体环境。
 - reduced animations/test clock。
 
+每个 baseline 必须由固定 fixture 提供数据。业务状态断言与截图断言分开；不能用当前开发数据库碰巧存在的数据充当 golden。优先冻结任务运行/失败/无需修改详情、流水线体检与执行模式确认，再扩到任务、流水线、设置三页的四档响应式。
+
 Golden 更新必须人工明确执行 update snapshot，并审阅 diff。
 
 ## 26. 页面设计优先级
@@ -716,10 +732,10 @@ Golden 更新必须人工明确执行 update snapshot，并审阅 diff。
 ### P0
 
 - AppShell。
-- Dashboard。
 - Task List。
 - Task Detail。
-- Project Preflight。
+- Pipeline List / Editor。
+- Pipeline Preflight。
 - Execution Mode Controller。
 
 ### P1
@@ -738,7 +754,7 @@ Golden 更新必须人工明确执行 update snapshot，并审阅 diff。
 
 ## 27. Phase 0 必须完成的组件
 
-Design primitives：
+Design primitives 按真实复用建立，不以“文件数量”作为完成标准。第一批需要稳定的语法包括：
 
 - Button。
 - IconButton。

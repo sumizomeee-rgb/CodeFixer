@@ -62,7 +62,7 @@ E:\Such_Proj\Other\HaruPulse
 
 读取时应围绕当前 CodeFixer 任务定向查看相关文件，禁止无边界扫描整个项目。
 
-### 2.3 GitLab Cherry-pick MR 原型脚本
+### 2.3 GitLab Cherry-pick 历史原型脚本
 
 脚本路径：
 
@@ -70,14 +70,14 @@ E:\Such_Proj\Other\HaruPulse
 E:\WorkProject\branches\Branch_Stems\HaruTrunkGitLua\doc\cherry_pick_mr.py
 ```
 
-可参考：
+仅可参考：
 
 - 从目标分支创建临时分支。
 - 按顺序 Cherry-pick commits。
-- 创建普通 GitLab MR，而不是 Draft MR。
-- MR 标题、assignee、目标分支和源分支清理等行为。
+- Git 命令的非交互执行与远端认证复用方式。
+- 临时分支、Commit 和远端副作用的确认思路。
 
-该脚本只是 `gitlabMr` 行为的历史原型，CodeFixer 不得直接调用、import 或要求部署该脚本。幂等、并发、部分成功、外部副作用对账和崩溃恢复必须使用 CodeFixer SPEC 中已经增强的协议。
+该脚本只用于理解历史流程，CodeFixer 不得直接调用、import 或要求部署它，也不得复刻其中的 MR、目标分支和 assignee 交互。当前 `gitlabPush` 只推送受控任务分支并返回 Commit URL；幂等、并发、外部副作用对账和崩溃恢复均以 CodeFixer SPEC 为准。
 
 ## 3. Agent 使用步骤
 

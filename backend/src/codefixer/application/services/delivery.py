@@ -6,7 +6,7 @@ from typing import Protocol
 from codefixer.application.ports.delivery import FinalAction, FinalActionResult, FrozenDeliveryContext
 
 
-REMOTE_ACTION_TYPES = frozenset({"gitlabMr", "githubPr"})
+REMOTE_ACTION_TYPES = frozenset({"gitlabPush", "githubPr"})
 
 
 @dataclass(frozen=True)

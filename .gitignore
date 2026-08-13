@@ -13,6 +13,8 @@ node_modules/
 frontend/dist/
 frontend/test-results/
 frontend/playwright-report/
+frontend/.vitest-attachments/
+frontend/tests/__screenshots__/
 
 # Runtime
 /data/

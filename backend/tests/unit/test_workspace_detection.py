@@ -17,7 +17,7 @@ def git(cwd: Path, *args: str) -> None:
     ("remote", "hosting", "actions"),
     [
         ("git@github.com:company/project.git", "github", {"patch", "githubPr"}),
-        ("https://gitlab.com/company/project.git", "gitlab", {"patch", "gitlabMr"}),
+        ("https://gitlab.com/company/project.git", "gitlab", {"patch", "gitlabPush"}),
         ("ssh://git@example.test/company/project.git", "other", {"patch"}),
     ],
 )

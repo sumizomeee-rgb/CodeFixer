@@ -7,6 +7,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
+
 
 WorkspaceCheck = dict[str, str]
 WorkspaceDetection = dict[str, Any]
@@ -84,6 +86,29 @@ def _hosting_kind(remote_urls: list[str]) -> str:
     return "other"
 
 
+def _probe_gitlab_web_base(host: str) -> str | None:
+    if not host:
+        return None
+    if host == "gitlab.com":
+        return "https://gitlab.com"
+    for scheme in ("https", "http"):
+        base = f"{scheme}://{host}"
+        try:
+            response = httpx.get(
+                f"{base}/-/health",
+                timeout=2.5,
+                follow_redirects=True,
+                verify=False,
+                headers={"User-Agent": "CodeFixer/1.0"},
+            )
+        except httpx.HTTPError:
+            continue
+        if response.status_code == 200 and "GitLab" in response.text:
+            final = response.url.copy_with(path="", query=None, fragment=None)
+            return str(final).rstrip("/")
+    return None
+
+
 def _base_result(path: Path) -> WorkspaceDetection:
     return {
         "path": str(path),
@@ -139,6 +164,16 @@ def detect_workspace(raw_path: str) -> WorkspaceDetection:
             else []
         )
         hosting_kind = _hosting_kind(remote_urls)
+        web_base_url: str | None = None
+        hosts = {_remote_host(value) for value in remote_urls if _remote_host(value)}
+        if hosting_kind == "gitlab":
+            web_base_url = "https://gitlab.com"
+        elif hosting_kind == "github":
+            web_base_url = "https://github.com"
+        elif hosting_kind == "other" and len(hosts) == 1:
+            web_base_url = _probe_gitlab_web_base(next(iter(hosts)))
+            if web_base_url:
+                hosting_kind = "gitlab"
         detection.update(
             {
                 "ready": writable,
@@ -156,6 +191,8 @@ def detect_workspace(raw_path: str) -> WorkspaceDetection:
         safe_remote_urls = [sanitize_remote_url(value) for value in remote_urls]
         if safe_remote_urls:
             detection["remoteUrl"] = safe_remote_urls[0]
+        if web_base_url:
+            detection["webBaseUrl"] = web_base_url
         checks.append(_check("workspace.vcs", "ready", "Git 工作区可识别", str(repository_root)))
         if not remote_urls:
             checks.append(_check("workspace.remote", "warning", "未配置 origin，仅可使用 Patch", _command_detail(remote_result)))
@@ -193,7 +230,7 @@ def available_final_actions(detection: WorkspaceDetection) -> set[str]:
         return set()
     actions = {"patch"}
     if detection.get("vcsKind") == "git" and detection.get("hostingKind") == "gitlab":
-        actions.add("gitlabMr")
+        actions.add("gitlabPush")
     if detection.get("vcsKind") == "git" and detection.get("hostingKind") == "github":
         actions.add("githubPr")
     return actions

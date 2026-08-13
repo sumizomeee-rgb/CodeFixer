@@ -311,7 +311,7 @@ api/
 - 直接 `SELECT/UPDATE`。
 - 调用 subprocess。
 - 写 Artifact。
-- 创建 MR。
+- 直接执行外部交付动作。
 - 实现状态机。
 
 `main.py` 只负责 application composition、lifespan、router mount、SPA/static hosting。

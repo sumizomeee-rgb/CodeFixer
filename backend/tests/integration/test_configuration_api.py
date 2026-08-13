@@ -37,7 +37,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert changed.json()["mode"] == "automatic"
         etag = changed.json()["etag"]
         repository = repo
-        project = {"id": "demo", "name": "Demo", "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"path": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
+        project = {"id": "demo", "name": "Demo", "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"path": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "branchLabel": "main", "versionSource": "fixed", "versionFallback": "v1", "submitterName": "Tester"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
         created = client.post("/api/projects", json=project, headers={"If-Match": etag})
         assert created.status_code == 201
         assert created.json()["project"]["modificationWorkspace"]["vcsKind"] == "git"
@@ -55,7 +55,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert public["secrets"]["company-gitlab"] == {"configured": True}
         assert "token-value" not in json.dumps(public)
 
-        incompatible = {**project, "finalActions": [{"id": "mr", "type": "gitlabMr", "targetBranches": ["main"]}]}
+        incompatible = {**project, "finalActions": [{"id": "push", "type": "gitlabPush"}]}
         rejected = client.put("/api/projects/demo", json=incompatible, headers={"If-Match": created.json()["etag"]})
         assert rejected.status_code == 422
-        assert "不支持 gitlabMr" in rejected.json()["error"]["message"]
+        assert "不支持 gitlabPush" in rejected.json()["error"]["message"]

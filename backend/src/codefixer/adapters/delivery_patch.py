@@ -51,24 +51,22 @@ def deliver_patch(*, patch_bytes: bytes, expected_sha256: str, output_directory:
 class PatchFinalAction:
     action_type = "patch"
 
-    def __init__(self, *, action_id: str, action_version: int, store: DeliveryStore, output_directory: Path, filename_template: str = "{task_id}-{run_id}.patch", overwrite: bool = False) -> None:
+    def __init__(self, *, action_id: str, action_version: int, store: DeliveryStore, output_directory: Path, overwrite: bool = False) -> None:
         self.action_id = action_id
         self.action_version = action_version
         self.store = store
         self.output_directory = output_directory
-        self.filename_template = filename_template
         self.overwrite = overwrite
 
     def execute(self, context: FrozenDeliveryContext) -> FinalActionResult:
-        config = {"outputDirectory": str(self.output_directory), "filenameTemplate": self.filename_template, "overwrite": self.overwrite}
+        config = {"outputDirectory": str(self.output_directory), "filename": context.patch_filename, "overwrite": self.overwrite}
         config_hash = hashlib.sha256(canonical_json(config).encode()).hexdigest()
         intent_key = hashlib.sha256(f"{context.run_id}:{self.action_id}:{self.action_version}:{config_hash}".encode()).hexdigest()
         action = self.store.ensure_action(task_run_id=context.run_id, action_id=self.action_id, action_version=self.action_version, action_type=self.action_type, config_hash=config_hash, intent_key=intent_key)
         action_db_id = int(action["id"])
         self.store.mark_action(action_db_id, status="running")
         try:
-            filename = self.filename_template.format(task_id=context.task_id, run_id=context.run_id, change_version=context.change_version)
-            delivered = deliver_patch(patch_bytes=context.patch_path.read_bytes(), expected_sha256=context.patch_sha256, output_directory=self.output_directory, filename=filename, overwrite=self.overwrite)
+            delivered = deliver_patch(patch_bytes=context.patch_path.read_bytes(), expected_sha256=context.patch_sha256, output_directory=self.output_directory, filename=context.patch_filename, overwrite=self.overwrite)
             detail: dict[str, object] = {"path": str(delivered.path), "sha256": delivered.sha256, "adoptedExisting": delivered.adopted_existing}
             self.store.mark_action(action_db_id, status="succeeded", outcome="success", result=detail)
             return FinalActionResult(self.action_id, self.action_type, "succeeded", "success", detail)
@@ -112,7 +110,7 @@ class FallbackPatchFinalAction:
     ) -> FinalActionResult:
         config = {
             "outputDirectory": str(self.output_directory),
-            "filenameTemplate": "{task_id}-{run_id}-{change_version}.patch",
+            "filename": context.patch_filename,
         }
         config_hash = hashlib.sha256(canonical_json(config).encode()).hexdigest()
         intent_key = hashlib.sha256(
@@ -142,9 +140,7 @@ class FallbackPatchFinalAction:
                     patch_bytes=context.patch_path.read_bytes(),
                     expected_sha256=context.patch_sha256,
                     output_directory=self.output_directory,
-                    filename=(
-                        f"{context.task_id}-{context.run_id}-{context.change_version}.patch"
-                    ),
+                    filename=context.patch_filename,
                 )
                 detail = {
                     "path": str(delivered.path),

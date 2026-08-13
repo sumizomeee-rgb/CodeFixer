@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type {
   FinalActionConfig,
   GitHubPrActionConfig,
-  GitLabMrActionConfig,
+  GitLabPushActionConfig,
   PatchActionConfig,
   PreflightResult,
   ProjectConfig,
@@ -23,15 +23,16 @@ const emptyProject = (): ProjectConfig => ({
   localizationSource: { id: 'localization-source', type: 'directory', path: '', readOnly: true },
   modificationWorkspace: { id: 'modification-workspace', path: '', allowedRoots: ['.'], deniedRoots: [], allowedExtensions: [] },
   verification: { timeoutSeconds: 1200, steps: [], allowNoAutomatedTests: false, reason: '' },
+  deliveryLog: { technologyTag:'Lua', branchLabel:'主干', versionSource:'ticketFixVersion', versionFallback:'v1.0', submitterName:'' },
   finalActions: [],
 })
 
 const csv = (value:string) => value.split(',').map(item => item.trim()).filter(Boolean)
 const firstRule = (project:ProjectConfig) => project.routingRules?.[0] ?? { id:'primary-route', providerRef:'', priority:100, catchAll:true, conditions:[] }
-const patchDefault = ():PatchActionConfig => ({ id:'patch', type:'patch', outputDirectory:'', filenameTemplate:'{task_id}-{run_id}.patch', overwrite:false, required:true })
-const mrDefault = ():GitLabMrActionConfig => ({ id:'gitlab-mr', type:'gitlabMr', targetBranches:['main'], titleTemplate:'[CodeFixer] {task_id}', descriptionTemplate:'CodeFixer 自动修复任务 {run_id}。', required:true })
+const patchDefault = ():PatchActionConfig => ({ id:'patch', type:'patch', outputDirectory:'', overwrite:false, required:true })
+const pushDefault = ():GitLabPushActionConfig => ({ id:'gitlab-push', type:'gitlabPush', required:true })
 const prDefault = ():GitHubPrActionConfig => ({ id:'github-pr', type:'githubPr', targetBranches:['main'], titleTemplate:'[CodeFixer] {task_id}', descriptionTemplate:'CodeFixer 自动修复任务 {run_id}。', required:true })
-const labelForAction = (action:FinalActionConfig) => action.type === 'patch' ? 'Patch' : action.type === 'gitlabMr' ? 'GitLab MR' : 'GitHub PR'
+const labelForAction = (action:FinalActionConfig) => action.type === 'patch' ? 'Patch' : action.type === 'gitlabPush' ? 'GitLab Push' : 'GitHub PR'
 const actionOf = <T extends FinalActionConfig['type']>(actions:FinalActionConfig[] | undefined, type:T) => actions?.find(item => item.type === type) as Extract<FinalActionConfig,{type:T}> | undefined
 
 function StatusIcon({ status }:{ status:'ready'|'warning'|'failed' }) {
@@ -71,8 +72,9 @@ export function ProjectsPage() {
   const route = editor ? firstRule(editor) : null
   const routeCondition = route?.conditions?.[0]
   const actions = editor?.finalActions ?? []
+  const deliveryLog = editor?.deliveryLog ?? {technologyTag:'Lua',branchLabel:'主干',versionSource:'ticketFixVersion' as const,versionFallback:'v1.0',submitterName:''}
   const patch = actionOf(actions,'patch')
-  const mr = actionOf(actions,'gitlabMr')
+  const gitlabPush = actionOf(actions,'gitlabPush')
   const pr = actionOf(actions,'githubPr')
 
   const openEditor = (project?:ProjectConfig) => {
@@ -89,6 +91,7 @@ export function ProjectsPage() {
       hostingKind:workspace.hostingKind ?? 'none',
       repositoryRoot:workspace.repositoryRoot,
       remoteUrl:workspace.remoteUrl,
+      webBaseUrl:workspace.webBaseUrl,
       summary:'已保存的识别结果',
       checks:[],
     } : null)
@@ -97,11 +100,12 @@ export function ProjectsPage() {
   const updateRule = (patch:Partial<NonNullable<ProjectConfig['routingRules']>[number]>) => editor && setEditor({...editor,routingRules:[{...firstRule(editor),...patch}]})
   const updateLocalization = (patch:Partial<NonNullable<ProjectConfig['localizationSource']>>) => editor && setEditor({...editor,localizationSource:{id:'localization-source',path:'',readOnly:true,...editor.localizationSource,...patch}})
   const updateWorkspace = (patch:Partial<NonNullable<ProjectConfig['modificationWorkspace']>>) => editor && setEditor({...editor,modificationWorkspace:{id:'modification-workspace',path:'',...editor.modificationWorkspace,...patch}})
+  const updateDeliveryLog = (patch:Partial<NonNullable<ProjectConfig['deliveryLog']>>) => editor && setEditor({...editor,deliveryLog:{...deliveryLog,...patch}})
   const setAction = (action:FinalActionConfig) => editor && setEditor({...editor,finalActions:[...actions.filter(item => item.type !== action.type),action]})
   const toggleAction = (type:FinalActionConfig['type']) => {
     if (!editor) return
     if (actions.some(item => item.type === type)) setEditor({...editor,finalActions:actions.filter(item => item.type !== type)})
-    else setAction(type === 'patch' ? patchDefault() : type === 'gitlabMr' ? mrDefault() : prDefault())
+    else setAction(type === 'patch' ? patchDefault() : type === 'gitlabPush' ? pushDefault() : prDefault())
   }
   const detect = async () => {
     const path = editor?.modificationWorkspace?.path.trim()
@@ -110,8 +114,8 @@ export function ProjectsPage() {
     try {
       const result = await api.detectWorkspace(path)
       setDetection(result)
-      updateWorkspace({path:result.path,vcsKind:result.vcsKind,hostingKind:result.hostingKind,repositoryRoot:result.repositoryRoot,remoteUrl:result.remoteUrl})
-      if (result.hostingKind !== 'gitlab' && mr) setEditor(current => current ? {...current,finalActions:(current.finalActions??[]).filter(item => item.type !== 'gitlabMr')} : current)
+      updateWorkspace({path:result.path,vcsKind:result.vcsKind,hostingKind:result.hostingKind,repositoryRoot:result.repositoryRoot,remoteUrl:result.remoteUrl,webBaseUrl:result.webBaseUrl})
+      if (result.hostingKind !== 'gitlab' && gitlabPush) setEditor(current => current ? {...current,finalActions:(current.finalActions??[]).filter(item => item.type !== 'gitlabPush')} : current)
       if (result.hostingKind !== 'github' && pr) setEditor(current => current ? {...current,finalActions:(current.finalActions??[]).filter(item => item.type !== 'githubPr')} : current)
     } catch (e) { setDetection(null); setError(e instanceof Error ? e.message : '无法识别目录') }
     finally { setBusy('') }
@@ -151,21 +155,21 @@ export function ProjectsPage() {
     1:Boolean(editor?.id && editor?.name?.trim() && route?.providerRef),
     2:Boolean(editor?.localizationSource?.path),
     3:Boolean(editor?.modificationWorkspace?.path && detection?.ready),
-    4:Boolean(actions.length) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.targetBranches.length > 0),
+    4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.branchLabel.trim() && editor.deliveryLog.versionFallback.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
   }
   const canSave = stepComplete[1] && stepComplete[2] && stepComplete[3] && stepComplete[4]
   const next = () => setStep(value => Math.min(4,value + 1) as Step)
   const sourceLabel = (project:ProjectConfig) => project.modificationWorkspace?.vcsKind?.toUpperCase() ?? '未识别'
 
   return <section className="page-stack project-page">
-    <div className="page-heading"><div><h1>项目</h1><p>为每类工单配置定位资料、修改工程与交付出口。</p></div><button className="primary compact" onClick={() => openEditor()}>新建项目</button></div>
+    <div className="page-heading"><div><span className="page-kicker">REPAIR PIPELINES</span><h1>流水线</h1><p>把工单、定位资料、修改工程与交付出口连成一条修复线路。</p></div><button className="primary compact" onClick={() => openEditor()}>新增流水线</button></div>
     {error && <button className="notice-strip error-note" onClick={() => setError('')}>{error}</button>}
 
     {projects.length === 0 ? <div className="empty-state project-empty"><span className="empty-symbol"><svg viewBox="0 0 36 36"><path d="M8 9h20v18H8z"/><path d="M13 5v8M23 5v8M5 15h6M25 15h6M13 22h10"/></svg></span><h2>建立第一条修复通道</h2><p>从一个工单来源开始，再告诉 CodeFixer 去哪里理解问题、修改哪份工程，以及最终如何交付。</p><button className="primary compact" onClick={() => openEditor()}>开始配置</button></div> :
       <div className="project-grid refined-project-grid">{projects.map(project => {
         const pf = preflights[project.id]
         const projectActions = project.finalActions ?? []
-        return <article className="project-card project-ledger-card" key={project.id}>
+        return <article className="project-card project-ledger-card" data-health={pf?.ready ? 'ready' : pf ? 'failed' : project.enabled === false ? 'inactive' : 'unknown'} key={project.id}>
           <header><div><small>{project.id}</small><h2>{project.name || project.id}</h2></div><span className={`readiness-badge ${pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
           <div className="project-path-story"><div><span>定位资料</span><b>{project.localizationSource?.path || '未配置'}</b></div><i/><div><span>修改工程 · {sourceLabel(project)}</span><b>{project.modificationWorkspace?.path || '未配置'}</b></div></div>
           <div className="delivery-tags">{projectActions.length ? projectActions.map(item => <span key={item.id}>{labelForAction(item)}</span>) : <span className="muted-tag">未配置交付</span>}</div>
@@ -175,9 +179,9 @@ export function ProjectsPage() {
       })}</div>}
 
     {editor && settings && route && <div className="modal-backdrop editor-backdrop"><div className="config-modal project-workbench" role="dialog" aria-modal="true" aria-labelledby="project-editor-title">
-      <header className="workbench-head"><div><small>PROJECT WORKBENCH</small><h2 id="project-editor-title">{editingId ? '编辑修复通道' : '创建修复通道'}</h2><p>四步完成配置。路径均指 CodeFixer 部署机上的本地目录。</p></div><button className="icon-btn" onClick={closeEditor} aria-label="关闭">×</button></header>
+      <header className="workbench-head"><div><small>PIPELINE WORKBENCH</small><h2 id="project-editor-title">{editingId ? '编辑流水线' : '新增流水线'}</h2><p>四步完成配置。路径均指 CodeFixer 部署机上的本地目录。</p></div><button className="icon-btn" onClick={closeEditor} aria-label="关闭">×</button></header>
       <div className="workbench-layout">
-        <nav className="project-stepper" aria-label="项目配置步骤">
+        <nav className="project-stepper" aria-label="流水线配置步骤">
           <StepMark number={1} current={step} complete={stepComplete[1]} title="工单反馈" detail="问题从哪里进入" onClick={() => setStep(1)}/>
           <StepMark number={2} current={step} complete={stepComplete[2]} title="定位资料" detail="Agent 去哪里反查" onClick={() => setStep(2)}/>
           <StepMark number={3} current={step} complete={stepComplete[3]} title="修改工程" detail="真正落代码的位置" onClick={() => setStep(3)}/>
@@ -185,8 +189,8 @@ export function ProjectsPage() {
         </nav>
 
         <div className="workbench-body">
-          {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单属于谁</h3><p>来源负责收取 Bug 和正文；项目规则负责把它送进这条修复通道。</p></div></div>
-            <div className="form-grid polished-form"><label>项目名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>项目 ID<input value={editor.id} disabled={!!editingId} onChange={e => setEditor({...editor,id:e.target.value})} placeholder="client-lua"/></label><label className="span-field">工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号在“工单来源”中配置，只保存在当前机器。</small></label></div>
+          {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单进入哪条线</h3><p>反馈源负责收取正文；流水线规则决定由哪套定位、修改和交付策略处理。</p></div></div>
+            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>流水线 ID<input value={editor.id} disabled={!!editingId} onChange={e => setEditor({...editor,id:e.target.value})} placeholder="client-lua"/></label><label className="span-field">工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
             {providerIds.length === 0 && <div className="soft-warning">还没有可选来源。请先到“工单来源”连接 Redmine 或 TAPD。</div>}
           </div>}
 
@@ -196,7 +200,7 @@ export function ProjectsPage() {
           </div>}
 
           {step === 3 && <div className="step-panel"><div className="step-intro"><span>03</span><div><h3>选择实际落代码的工程</h3><p>无需手选仓库类型。平台会检查目录、识别 Git/SVN，并读取 origin 判断托管平台。</p></div></div>
-            <label className="path-field"><span>修改工程路径</span><div><input value={editor.modificationWorkspace?.path ?? ''} onChange={e => {updateWorkspace({path:e.target.value,vcsKind:'unknown',hostingKind:'none',repositoryRoot:undefined,remoteUrl:undefined});setDetection(null)}} placeholder={String.raw`例如：/srv/repos/client 或 E:\WorkProject\Client`}/><button className="primary compact path-detect-button" disabled={busy === 'detect' || !editor.modificationWorkspace?.path.trim()} onClick={() => void detect()}>{busy === 'detect' ? '识别中…' : '识别目录'}</button></div><small>这里的“本地”指运行 CodeFixer 服务的机器；换机后在新机器重新配置即可。</small></label>
+            <label className="path-field"><span>修改工程路径</span><div><input value={editor.modificationWorkspace?.path ?? ''} onChange={e => {updateWorkspace({path:e.target.value,vcsKind:'unknown',hostingKind:'none',repositoryRoot:undefined,remoteUrl:undefined,webBaseUrl:undefined});setDetection(null)}} placeholder={String.raw`例如：/srv/repos/client 或 E:\WorkProject\Client`}/><button className="primary compact path-detect-button" disabled={busy === 'detect' || !editor.modificationWorkspace?.path.trim()} onClick={() => void detect()}>{busy === 'detect' ? '识别中…' : '识别目录'}</button></div><small>这里的“本地”指运行 CodeFixer 服务的机器；换机后在新机器重新配置即可。</small></label>
             {detection ? <div className={`detection-report ${detection.ready ? 'ready' : 'failed'}`}>
               <div className="detection-summary"><StatusIcon status={detection.ready ? 'ready' : 'failed'}/><div><b>{detection.summary}</b><span>{detection.repositoryRoot ?? detection.path}</span></div><div className="detection-facts"><span>{detection.vcsKind.toUpperCase()}</span><span>{detection.hostingKind === 'gitlab' ? 'GitLab' : detection.hostingKind === 'github' ? 'GitHub' : detection.hostingKind === 'other' ? '其他 Git 托管' : '本地仓库'}</span></div></div>
               {detection.remoteUrl && <div className="remote-line"><span>ORIGIN</span><code>{detection.remoteUrl}</code></div>}
@@ -204,15 +208,16 @@ export function ProjectsPage() {
             </div> : <div className="detect-placeholder"><span>等待识别</span><p>识别完成后，下一步会自动开放这个工程支持的交付方式。</p></div>}
           </div>}
 
-          {step === 4 && <div className="step-panel"><div className="step-intro"><span>04</span><div><h3>选择一个或多个交付出口</h3><p>每个动作独立执行。MR / PR 失败时会自动额外保留 Patch，但任务仍会明确标记交付失败。</p></div></div>
+          {step === 4 && <div className="step-panel"><div className="step-intro"><span>04</span><div><h3>选择一个或多个交付出口</h3><p>每个动作共用同一条冻结日志；远端交付失败时会自动额外保留 Patch。</p></div></div>
+            <div className="delivery-log-config"><div className="delivery-log-head"><span>交付日志</span><p>固定前后缀由程序填写，AI 只生成模块名与修改摘要。</p></div><div className="form-grid polished-form"><label>技术域<input value={deliveryLog.technologyTag} onChange={e => updateDeliveryLog({technologyTag:e.target.value})} placeholder="Lua"/></label><label>分支标签<input value={deliveryLog.branchLabel} onChange={e => updateDeliveryLog({branchLabel:e.target.value})} placeholder="主干"/></label><label>版本来源<select value={deliveryLog.versionSource} onChange={e => updateDeliveryLog({versionSource:e.target.value as 'fixed'|'ticketFixVersion'})}><option value="ticketFixVersion">工单修复版本</option><option value="fixed">固定版本</option></select></label><label>版本 / 兜底<input value={deliveryLog.versionFallback} onChange={e => updateDeliveryLog({versionFallback:e.target.value})} placeholder="v4.8"/></label><label className="span-field">提交人姓名<input value={deliveryLog.submitterName} onChange={e => updateDeliveryLog({submitterName:e.target.value})} placeholder="例如：黄永熙"/><small>写入“提交人：”之后；不等同于 Git Author 或 GitLab 用户名。</small></label></div><code>fix：【{deliveryLog.technologyTag || 'Lua'}】【#B1250062】【{deliveryLog.branchLabel || '主干'}】【{deliveryLog.versionFallback || 'v4.8'}】AI 模块名 - AI 修改摘要&nbsp;&nbsp;提交人：{deliveryLog.submitterName || '姓名'}</code></div>
             <div className="action-choice-grid">
               <button className={`action-choice ${patch ? 'selected' : ''}`} onClick={() => toggleAction('patch')}><span className="choice-check">{patch ? '✓' : ''}</span><svg viewBox="0 0 32 32"><path d="M7 5h13l5 5v17H7z"/><path d="M20 5v6h6M11 17h10M11 21h7"/></svg><div><b>生成 Patch</b><small>任何 Git / SVN 工程都可用</small></div></button>
-              <button disabled={detection?.hostingKind !== 'gitlab'} className={`action-choice ${mr ? 'selected' : ''}`} onClick={() => toggleAction('gitlabMr')}><span className="choice-check">{mr ? '✓' : ''}</span><svg viewBox="0 0 32 32"><path d="m5 13 4-9 4 9h6l4-9 4 9-11 14Z"/></svg><div><b>GitLab MR</b><small>{detection?.hostingKind === 'gitlab' ? '使用当前仓库 origin 与本机认证' : '仅 GitLab 工程可选'}</small></div></button>
+              <button disabled={detection?.hostingKind !== 'gitlab'} className={`action-choice ${gitlabPush ? 'selected' : ''}`} onClick={() => toggleAction('gitlabPush')}><span className="choice-check">{gitlabPush ? '✓' : ''}</span><svg viewBox="0 0 32 32"><path d="m5 13 4-9 4 9h6l4-9 4 9-11 14Z"/></svg><div><b>推送到 GitLab</b><small>{detection?.hostingKind === 'gitlab' ? '返回 Commit，由你在 Web 手动 Cherry-pick' : '仅 GitLab 工程可选'}</small></div></button>
               <button disabled={detection?.hostingKind !== 'github'} className={`action-choice ${pr ? 'selected' : ''}`} onClick={() => toggleAction('githubPr')}><span className="choice-check">{pr ? '✓' : ''}</span><svg viewBox="0 0 32 32"><path d="M16 5a11 11 0 0 0-3.5 21.4c.6.1.8-.3.8-.6v-2.1c-3.3.7-4-1.4-4-1.4-.6-1.4-1.4-1.8-1.4-1.8-1.1-.8.1-.8.1-.8 1.2.1 1.9 1.3 1.9 1.3 1.1 1.9 2.9 1.4 3.6 1.1.1-.8.4-1.4.8-1.7-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C20 8.8 21 9.1 21 9.1c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.4.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A11 11 0 0 0 16 5Z"/></svg><div><b>GitHub PR</b><small>{detection?.hostingKind === 'github' ? '使用当前仓库 origin 与 gh 登录态' : '仅 GitHub 工程可选'}</small></div></button>
             </div>
             <div className="action-config-stack">
-              {patch && <div className="action-config"><div><b>Patch 输出</b><small>指定部署机上的绝对目录；MR / PR 失败时另有平台保底目录。</small></div><label>输出目录<input value={patch.outputDirectory ?? ''} onChange={e => setAction({...patch,outputDirectory:e.target.value})} placeholder={String.raw`例如：/srv/codefixer/patches 或 E:\Patches`}/></label></div>}
-              {mr && <div className="action-config"><div><b>GitLab MR</b><small>可一次向多个目标分支创建 MR。</small></div><label>目标分支<input value={mr.targetBranches.join(', ')} onChange={e => setAction({...mr,targetBranches:csv(e.target.value)})} placeholder="main, release/1.0"/></label></div>}
+              {patch && <div className="action-config"><div><b>Patch 输出</b><small>指定部署机上的绝对目录；远端交付失败时另有平台保底目录。</small></div><label>输出目录<input value={patch.outputDirectory ?? ''} onChange={e => setAction({...patch,outputDirectory:e.target.value})} placeholder={String.raw`例如：/srv/codefixer/patches 或 E:\Patches`}/></label></div>}
+              {gitlabPush && <div className="action-config action-config-quiet"><div><b>GitLab 已就绪</b><small>使用当前仓库 origin 与本机 Git 认证推送受控任务分支，无需 Token、目标分支或指派人。</small></div></div>}
               {pr && <div className="action-config"><div><b>GitHub PR</b><small>可一次向多个目标分支创建 PR。</small></div><label>目标分支<input value={pr.targetBranches.join(', ')} onChange={e => setAction({...pr,targetBranches:csv(e.target.value)})} placeholder="main, release/1.0"/></label></div>}
               {actions.length === 0 && <div className="no-action-selected">至少选择一种交付方式。</div>}
             </div>

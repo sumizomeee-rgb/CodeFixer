@@ -1,6 +1,0 @@
-.current-model-control{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:16px;padding:12px 0 2px;border-top:1px solid var(--line)}
-.current-model-control .runtime-mark{width:32px;height:32px}
-.current-model-control label{display:block;min-width:0}
-.current-model-control select{width:100%;min-height:36px;padding:0 34px 0 0;border:0;background:transparent;color:var(--text);font:inherit;font-size:13px;font-weight:700;outline:none;cursor:pointer}
-.current-model-control select:disabled{cursor:wait;opacity:.65}
-.current-model-control small{display:block;margin-top:2px;color:var(--muted);font-size:10px;line-height:1.45}

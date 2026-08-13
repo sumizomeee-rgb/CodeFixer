@@ -8,6 +8,7 @@ from codefixer.application.ports.agents import AgentRequest, AgentRuntime
 from codefixer.application.ports.delivery import FinalActionResult, FrozenDeliveryContext
 from codefixer.application.ports.sources import ModificationSourceAdapter, SourcePolicy, WorkspaceManifest
 from codefixer.application.services.delivery import DeliveryCoordinator
+from codefixer.application.services.delivery_metadata import build_delivery_metadata
 from codefixer.application.services.freeze import freeze_change
 from codefixer.application.services.stability import PreDeliveryStabilityGuard
 from codefixer.application.services.verification import VerificationRunner, VerificationStep
@@ -60,6 +61,8 @@ class ChangedPipeline:
         self._check_cancel(run_id)
         discovery_manifest: WorkspaceManifest | None = None
         repair_manifest: WorkspaceManifest | None = None
+        discovery_payload: dict[str, Any] = {}
+        repair_payload: dict[str, Any] = {}
         try:
             project_json = canonical_json(self.project)
             project_hash = hashlib.sha256(project_json.encode()).hexdigest()
@@ -127,6 +130,17 @@ class ChangedPipeline:
                     raise PipelineFailure('insufficient_evidence', 'review', 'Independent review did not approve the no-change evidence')
                 self._check_cancel(run_id)
                 self._run_stability_check(run_id=run_id, context=context, frozen_source_revision=repair_manifest.base_revision)
+                self._write_conclusion(
+                    task_id,
+                    run_id,
+                    {
+                        'schema_version': 1,
+                        'outcome': 'no_change',
+                        'headline': '当前代码无需修改',
+                        'cause': str(no_change_payload.get('claim') or discovery_payload.get('summary') or '当前基线已经满足工单描述。'),
+                        'resolution': '无需生成代码差异；已保留定位、验证和独立复核证据。',
+                    },
+                )
                 self.tasks.complete_run(run_id, 'no_change')
                 return PipelineResult(task_id, run_id, 'completed', 'no_change', ())
             assess_stage = self.tasks.start_stage(run_id, 'assess', 1)
@@ -199,14 +213,33 @@ class ChangedPipeline:
             self._check_cancel(run_id)
             self._run_stability_check(run_id=run_id, context=context, frozen_source_revision=repair_manifest.base_revision)
             freeze_stage = self.tasks.start_stage(run_id, 'freeze_change', 1)
+            delivery_metadata_payload = build_delivery_metadata(context=context, project=self.project, repair=repair_payload)
+            delivery_metadata = self.artifacts.write_json(
+                self.artifacts.run_root(task_id, run_id) / 'freeze-change' / 'delivery-metadata.json',
+                delivery_metadata_payload,
+                schema_name='delivery-metadata',
+                copy_schema=True,
+            )
+            self._index(run_id, 'freeze_change', 'delivery_metadata', delivery_metadata)
             patch_artifact, manifest_artifact = freeze_change(artifacts=self.artifacts, task_id=task_id, run_id=run_id, manifest=repair_manifest, candidate=candidate, verification=verification_artifact, review=last_review, config_sha256=project_hash)
             self._index(run_id, 'freeze_change', 'frozen_patch', patch_artifact)
             self._index(run_id, 'freeze_change', 'change_manifest', manifest_artifact)
             self.tasks.finish_stage(freeze_stage, status='completed', output_path=str(manifest_artifact.path))
+            self._write_conclusion(
+                task_id,
+                run_id,
+                {
+                    'schema_version': 1,
+                    'outcome': 'changed',
+                    'headline': f"已修复{delivery_metadata_payload['change_summary']}",
+                    'cause': str(discovery_payload.get('summary') or '已根据工单和当前基线定位问题原因。'),
+                    'resolution': str(repair_payload.get('summary') or delivery_metadata_payload['change_summary']),
+                },
+            )
             self._check_cancel(run_id)
             deliver_stage = self.tasks.start_stage(run_id, 'deliver', 1)
             try:
-                delivery_report = self.delivery.execute_report(FrozenDeliveryContext(task_id=task_id, run_id=run_id, change_version=1, source_id=repair_manifest.source_id, base_revision=repair_manifest.base_revision, patch_path=patch_artifact.path, patch_sha256=patch_artifact.sha256, manifest_path=manifest_artifact.path))
+                delivery_report = self.delivery.execute_report(FrozenDeliveryContext(task_id=task_id, run_id=run_id, change_version=1, source_id=repair_manifest.source_id, base_revision=repair_manifest.base_revision, patch_path=patch_artifact.path, patch_sha256=patch_artifact.sha256, manifest_path=manifest_artifact.path, delivery_metadata_path=delivery_metadata.path, commit_subject=str(delivery_metadata_payload['commit_subject']), patch_filename=str(delivery_metadata_payload['patch_filename']), ticket_key=str(delivery_metadata_payload['ticket_key'])))
                 deliveries = delivery_report.results
             except Exception as exc:
                 failure = {'code': 'delivery_exception', 'stage': 'deliver', 'summary': str(exc), 'retryable': True, 'side_effects': []}
@@ -224,10 +257,12 @@ class ChangedPipeline:
             self.tasks.complete_run(run_id, 'changed')
             return PipelineResult(task_id, run_id, 'completed', 'changed', deliveries)
         except PipelineCanceled:
+            self._write_conclusion_safe(task_id, run_id, 'canceled', '任务已取消', '任务在完成前收到取消请求。', '未继续执行后续修改或交付。')
             self.tasks.cancel_run(run_id)
             return PipelineResult(task_id, run_id, 'canceled', None, ())
         except (PipelineFailure, ArtifactProtocolError) as exc:
             failure = exc.failure if isinstance(exc, PipelineFailure) else {'code': 'agent_protocol_invalid', 'stage': 'protocol', 'summary': str(exc), 'retryable': False, 'side_effects': []}
+            self._write_conclusion_safe(task_id, run_id, 'failed', '任务未能完成', str(failure.get('summary') or '任务执行失败。'), '请按失败建议补充信息、修正配置或重新运行。')
             self.tasks.fail_run(run_id, failure)
             return PipelineResult(task_id, run_id, 'failed', None, ())
         finally:
@@ -275,6 +310,32 @@ class ChangedPipeline:
         artifact = self.artifacts.write_text(self.artifacts.stage_root(task_id, run_id, 'scope_discovery') / 'scope-discovery.md', '\n'.join(lines))
         self._index(run_id, 'scope_discovery', 'scope_discovery_document', artifact)
         return artifact
+
+    def _write_conclusion(self, task_id: str, run_id: str, payload: dict[str, Any]) -> StoredArtifact:
+        normalized = dict(payload)
+        limits = {'headline': 120, 'cause': 500, 'resolution': 500}
+        fallbacks = {
+            'headline': '任务处理结束',
+            'cause': '平台已保留本次处理记录。',
+            'resolution': '请查看任务阶段与交付结果。',
+        }
+        for field, maximum in limits.items():
+            value = ' '.join(str(normalized.get(field) or fallbacks[field]).split())
+            normalized[field] = value[:maximum]
+        artifact = self.artifacts.write_json(
+            self.artifacts.run_root(task_id, run_id) / 'final' / 'task-conclusion.json',
+            normalized,
+            schema_name='task-conclusion',
+            copy_schema=True,
+        )
+        self._index(run_id, 'finalize', 'task_conclusion', artifact)
+        return artifact
+
+    def _write_conclusion_safe(self, task_id: str, run_id: str, outcome: str, headline: str, cause: str, resolution: str) -> None:
+        try:
+            self._write_conclusion(task_id, run_id, {'schema_version': 1, 'outcome': outcome, 'headline': headline, 'cause': cause[:500], 'resolution': resolution[:500]})
+        except Exception:
+            pass
 
     def _assess_discovery(self, payload: dict[str, Any], workspace: dict[str, Any], modification_root: Path) -> None:
         """Apply deterministic boundaries before opening the write-capable Agent session."""

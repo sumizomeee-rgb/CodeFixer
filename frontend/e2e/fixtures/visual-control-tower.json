@@ -1,0 +1,202 @@
+{
+  "settings": {
+    "config": {
+      "schemaVersion": 1,
+      "server": { "host": "0.0.0.0", "port": 9522 },
+      "storage": { "dataRoot": ".local/data" },
+      "execution": {
+        "mode": "automatic",
+        "currentModelId": "claude-haiku",
+        "maxConcurrentTasks": 4,
+        "maxConcurrentLlmCalls": 4,
+        "baselineCohortWindowMs": 15000,
+        "maxRepairAttempts": 3
+      },
+      "executableBindings": {
+        "claude-code-cli": { "command": ["claude"] },
+        "git-cli": { "command": ["git"] }
+      },
+      "ticketProviders": [
+        { "id": "Haru TAPD", "type": "tapd", "enabled": true, "workspaceId": "45286624", "pollIntervalSeconds": 60 }
+      ],
+      "agentProfiles": [
+        { "id": "claude-haiku", "runtime": "claudeCode", "executableRef": "claude-code-cli", "model": "claude-haiku-4-5", "timeoutSeconds": 1800 }
+      ],
+      "knowledgeProviders": [],
+      "projects": [
+        {
+          "id": "client-lua",
+          "name": "客户端 Lua 修复通道",
+          "enabled": true,
+          "routingRules": [{ "id": "primary-route", "providerRef": "Haru TAPD", "priority": 100, "catchAll": true, "conditions": [] }],
+          "localizationSource": { "id": "localization-source", "type": "directory", "path": "E:\\Knowledge\\Client", "readOnly": true },
+          "modificationWorkspace": { "id": "modification-workspace", "path": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "repositoryRoot": "E:\\Repos\\Client", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
+          "deliveryLog": { "technologyTag": "Lua", "branchLabel": "主干", "versionSource": "ticketFixVersion", "versionFallback": "v4.7", "submitterName": "黄永熙" },
+          "verification": { "timeoutSeconds": 1200, "steps": [], "allowNoAutomatedTests": true, "reason": "演示夹具" },
+          "finalActions": [
+            { "id": "patch", "type": "patch", "outputDirectory": "E:\\Patches", "required": true },
+            { "id": "gitlab-push", "type": "gitlabPush", "required": true }
+          ]
+        }
+      ]
+    },
+    "secrets": { "provider-Haru%20TAPD-token": { "configured": true } },
+    "etag": "visual-etag"
+  },
+  "readiness": {
+    "ready": true,
+    "status": "ready",
+    "environment": "windows",
+    "checks": [
+      { "id": "config.loaded", "status": "ready", "summary": "配置已加载", "required": true },
+      { "id": "storage.data_root", "status": "ready", "summary": "本机数据目录可写", "required": true },
+      { "id": "sqlite.wal", "status": "ready", "summary": "任务账本可写", "required": true },
+      { "id": "frontend.dist", "status": "ready", "summary": "Web 资源已构建", "required": true },
+      { "id": "dependency.claude-code-cli", "status": "ready", "summary": "Claude Code 2.1.220 可用", "dependencyId": "claude-code-cli", "required": true, "version": "2.1.220" }
+    ]
+  },
+  "providers": [
+    { "id": "Haru TAPD", "type": "tapd", "enabled": true, "workspaceId": "45286624" },
+    { "id": "研发 Redmine", "type": "redmine", "enabled": true, "baseUrl": "https://redmine.example.com" }
+  ],
+  "projects": [
+    {
+      "id": "client-lua",
+      "name": "客户端 Lua 修复通道",
+      "enabled": true,
+      "routingRules": [{ "id": "primary-route", "providerRef": "Haru TAPD", "priority": 100, "catchAll": true, "conditions": [] }],
+      "localizationSource": { "id": "localization-source", "type": "directory", "path": "E:\\Knowledge\\Client", "readOnly": true },
+      "modificationWorkspace": { "id": "modification-workspace", "path": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "repositoryRoot": "E:\\Repos\\Client", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
+      "deliveryLog": { "technologyTag": "Lua", "branchLabel": "主干", "versionSource": "ticketFixVersion", "versionFallback": "v4.7", "submitterName": "黄永熙" },
+      "verification": { "timeoutSeconds": 1200, "steps": [], "allowNoAutomatedTests": true, "reason": "演示夹具" },
+      "finalActions": [
+        { "id": "patch", "type": "patch", "outputDirectory": "E:\\Patches", "required": true },
+        { "id": "gitlab-push", "type": "gitlabPush", "required": true }
+      ]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-running",
+      "project_id": "client-lua",
+      "status": "running",
+      "result": null,
+      "provider_instance_id": "Haru TAPD",
+      "external_ticket_id": "248625",
+      "title": "【4.7】【商城】购买礼包后偶现红点未刷新",
+      "current_run_id": "run-running",
+      "created_at": "2026-08-13T09:20:00Z",
+      "updated_at": "2026-08-13T09:25:00Z",
+      "failure": null,
+      "runs": [{
+        "id": "run-running",
+        "status": "running",
+        "execution_mode_snapshot": "automatic",
+        "created_at": "2026-08-13T09:20:00Z",
+        "started_at": "2026-08-13T09:20:03Z",
+        "stages": [
+          { "id": 1, "stage_id": "prepare", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:20:03Z", "finished_at": "2026-08-13T09:20:04Z" },
+          { "id": 2, "stage_id": "scope_discovery", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:20:04Z", "finished_at": "2026-08-13T09:20:22Z" },
+          { "id": 3, "stage_id": "discovery", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:20:22Z", "finished_at": "2026-08-13T09:21:04Z" },
+          { "id": 4, "stage_id": "assess", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:21:04Z", "finished_at": "2026-08-13T09:21:10Z" },
+          { "id": 5, "stage_id": "workspace_prepare", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:21:10Z", "finished_at": "2026-08-13T09:21:18Z" },
+          { "id": 6, "stage_id": "repair", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:21:18Z", "finished_at": "2026-08-13T09:23:01Z" },
+          { "id": 7, "stage_id": "verify", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:23:01Z", "finished_at": "2026-08-13T09:23:20Z" },
+          { "id": 8, "stage_id": "review", "attempt": 1, "status": "completed", "started_at": "2026-08-13T09:23:20Z", "finished_at": "2026-08-13T09:23:44Z" },
+          { "id": 9, "stage_id": "repair", "attempt": 2, "status": "running", "started_at": "2026-08-13T09:23:44Z", "finished_at": null }
+        ],
+        "artifacts": [
+          { "id": 1, "stage_id": "discovery", "artifact_type": "discovery_evidence", "relative_path": "runs/run-running/discovery/evidence.md", "sha256": "319ec73fa2ddf4778bf4e87b39cfaf1b", "size_bytes": 9421, "attempt": 1 }
+        ],
+        "delivery_actions": []
+      }],
+      "events": [
+        { "id": 1, "event_type": "task_created", "created_at": "2026-08-13T09:20:00Z", "payload": {} },
+        { "id": 2, "event_type": "stage_started", "created_at": "2026-08-13T09:23:44Z", "payload": { "stage": "repair", "attempt": 2 } }
+      ]
+    },
+    {
+      "id": "task-failed",
+      "project_id": "client-lua",
+      "status": "failed",
+      "result": null,
+      "provider_instance_id": "Haru TAPD",
+      "external_ticket_id": "248612",
+      "title": "【4.7】【登录】弱网重连后角色列表偶发为空",
+      "current_run_id": "run-failed",
+      "created_at": "2026-08-13T08:10:00Z",
+      "updated_at": "2026-08-13T08:19:00Z",
+      "failure": { "code": "delivery_failed", "stage": "deliver", "summary": "GitLab 任务分支推送失败，保底 Patch 已生成。", "side_effects": ["Patch 已写入 .local/data/fallback-patches/task-failed.patch"] },
+      "runs": [{
+        "id": "run-failed",
+        "status": "failed",
+        "execution_mode_snapshot": "automatic",
+        "created_at": "2026-08-13T08:10:00Z",
+        "started_at": "2026-08-13T08:10:03Z",
+        "finished_at": "2026-08-13T08:19:00Z",
+        "stages": [
+          { "id": 20, "stage_id": "prepare", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:10:03Z", "finished_at": "2026-08-13T08:10:04Z" },
+          { "id": 21, "stage_id": "scope_discovery", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:10:04Z", "finished_at": "2026-08-13T08:10:22Z" },
+          { "id": 22, "stage_id": "discovery", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:10:22Z", "finished_at": "2026-08-13T08:11:04Z" },
+          { "id": 23, "stage_id": "assess", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:11:04Z", "finished_at": "2026-08-13T08:11:10Z" },
+          { "id": 24, "stage_id": "repair", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:11:10Z", "finished_at": "2026-08-13T08:15:00Z" },
+          { "id": 25, "stage_id": "verify", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:15:00Z", "finished_at": "2026-08-13T08:16:00Z" },
+          { "id": 26, "stage_id": "review", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:16:00Z", "finished_at": "2026-08-13T08:17:00Z" },
+          { "id": 27, "stage_id": "freeze_change", "attempt": 1, "status": "completed", "started_at": "2026-08-13T08:17:00Z", "finished_at": "2026-08-13T08:17:02Z" },
+          { "id": 28, "stage_id": "deliver", "attempt": 1, "status": "failed", "started_at": "2026-08-13T08:17:02Z", "finished_at": "2026-08-13T08:19:00Z" }
+        ],
+        "artifacts": [
+          { "id": 4, "stage_id": "freeze_change", "artifact_type": "change_manifest", "relative_path": "runs/run-failed/frozen/change-manifest.json", "sha256": "7d1ac6e4b01d5ff297bf20d0e4d8e7f7", "size_bytes": 2084, "attempt": 1 },
+          { "id": 5, "stage_id": "deliver", "artifact_type": "fallback_patch", "relative_path": ".local/data/fallback-patches/task-failed.patch", "sha256": "21bb9616b6f1b36c0d834271fe62f755", "size_bytes": 12741, "attempt": 1 }
+        ],
+        "conclusion": { "schema_version": 1, "outcome": "changed", "headline": "已修复弱网重连后的角色列表刷新", "cause": "重连完成后角色缓存仍沿用旧会话标识。", "resolution": "在会话重建后主动失效角色缓存，并补充空列表保护。" },
+        "change_manifest": { "schema_version": 1, "change_version": 1, "files": [{ "path": "src/login/RoleList.lua", "operation": "modify", "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000" }] },
+        "delivery_metadata": { "schema_version": 1, "commit_subject": "fix：【Lua】【#B248612】【主干】【v4.7】登录 - 弱网重连角色列表刷新修复  提交人：黄永熙", "patch_filename": "repair.patch", "ticket_key": "B248612", "technology_tag": "Lua", "branch_label": "主干", "version_label": "v4.7", "module_name": "登录", "change_summary": "弱网重连角色列表刷新修复", "submitter_name": "黄永熙", "conventional_type": "fix" },
+        "delivery_actions": [
+          { "id": 1, "action_id": "gitlab-push", "action_type": "gitlabPush", "status": "failed", "result": { "code": "gitlab_push_failed", "error": "origin 权限拒绝" }, "targets": [] },
+          { "id": 2, "action_id": "fallback-patch", "action_type": "fallbackPatch", "status": "succeeded", "result": { "path": ".local/data/fallback-patches/task-failed.patch" }, "targets": [] }
+        ]
+      }],
+      "events": [
+        { "id": 10, "event_type": "task_created", "created_at": "2026-08-13T08:10:00Z", "payload": {} },
+        { "id": 11, "event_type": "delivery_failed", "created_at": "2026-08-13T08:19:00Z", "payload": {} }
+      ]
+    },
+    {
+      "id": "task-no-change",
+      "project_id": "client-lua",
+      "status": "completed",
+      "result": "no_change",
+      "provider_instance_id": "Haru TAPD",
+      "external_ticket_id": "248590",
+      "title": "【4.7】【背包】空物品格仍显示旧品质边框",
+      "current_run_id": "run-no-change",
+      "created_at": "2026-08-13T07:00:00Z",
+      "updated_at": "2026-08-13T07:04:00Z",
+      "failure": null,
+      "runs": [{
+        "id": "run-no-change",
+        "status": "completed",
+        "execution_mode_snapshot": "automatic",
+        "created_at": "2026-08-13T07:00:00Z",
+        "started_at": "2026-08-13T07:00:02Z",
+        "finished_at": "2026-08-13T07:04:00Z",
+        "stages": [
+          { "id": 40, "stage_id": "prepare", "attempt": 1, "status": "completed", "started_at": "2026-08-13T07:00:02Z", "finished_at": "2026-08-13T07:00:03Z" },
+          { "id": 41, "stage_id": "scope_discovery", "attempt": 1, "status": "completed", "started_at": "2026-08-13T07:00:03Z", "finished_at": "2026-08-13T07:00:30Z" },
+          { "id": 42, "stage_id": "discovery", "attempt": 1, "status": "completed", "started_at": "2026-08-13T07:00:30Z", "finished_at": "2026-08-13T07:02:00Z" },
+          { "id": 43, "stage_id": "assess", "attempt": 1, "status": "completed", "started_at": "2026-08-13T07:02:00Z", "finished_at": "2026-08-13T07:02:18Z" },
+          { "id": 44, "stage_id": "no_change_verify", "attempt": 1, "status": "completed", "started_at": "2026-08-13T07:02:18Z", "finished_at": "2026-08-13T07:03:30Z" },
+          { "id": 45, "stage_id": "review", "attempt": 1, "status": "completed", "started_at": "2026-08-13T07:03:30Z", "finished_at": "2026-08-13T07:04:00Z" }
+        ],
+        "artifacts": [
+          { "id": 8, "stage_id": "discovery", "artifact_type": "discovery_evidence", "relative_path": "runs/run-no-change/discovery/evidence.md", "sha256": "9d36e7b2521af9a0e8caedeea7ff1328", "size_bytes": 7012, "attempt": 1 },
+          { "id": 9, "stage_id": "no_change_verify", "artifact_type": "verification_report", "relative_path": "runs/run-no-change/verify/report.md", "sha256": "33cf4f23aa100302f04d7d7cd0202b11", "size_bytes": 5201, "attempt": 1 },
+          { "id": 10, "stage_id": "review", "artifact_type": "review_report", "relative_path": "runs/run-no-change/review/report.md", "sha256": "e2cc84f52b9ee97bc276cc99a79e99dd", "size_bytes": 4102, "attempt": 1 }
+        ],
+        "delivery_actions": []
+      }],
+      "events": [{ "id": 20, "event_type": "task_completed", "created_at": "2026-08-13T07:04:00Z", "payload": { "result": "no_change" } }]
+    }
+  ]
+}

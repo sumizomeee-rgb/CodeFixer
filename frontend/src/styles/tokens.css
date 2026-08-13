@@ -1,0 +1,84 @@
+:root {
+  color-scheme: light;
+  --font-sans: "IBM Plex Sans", "Noto Sans SC", sans-serif;
+  --font-cn: "Noto Sans SC", "IBM Plex Sans", sans-serif;
+  --font-mono: "IBM Plex Mono", "Noto Sans SC", ui-monospace, monospace;
+
+  --canvas: #f3f4f1;
+  --canvas-grid: rgba(23, 26, 23, .026);
+  --surface: #fbfcfa;
+  --surface-2: #eef0ec;
+  --surface-3: #e6e9e4;
+  --raised: #ffffff;
+  --line: #d5d9d2;
+  --line-strong: #aeb6ad;
+  --text: #181b18;
+  --muted: #58615b;
+  --tertiary: #778079;
+
+  --signal: #f4603c;
+  --signal-hover: #dc4d2b;
+  --signal-soft: #fff0ea;
+  --signal-line: #f8b29f;
+  --success: #27825a;
+  --success-soft: #eaf6ef;
+  --nochange: #257a80;
+  --nochange-soft: #e7f4f3;
+  --warning: #9a6917;
+  --warning-soft: #fbf1db;
+  --failed: #c63f4e;
+  --failed-soft: #fbecef;
+  --reconcile: #6652b8;
+  --reconcile-soft: #eeebfa;
+  --side: #a74182;
+  --side-soft: #f8eaf3;
+
+  --r-sharp: 3px;
+  --r-sm: 7px;
+  --r-md: 11px;
+  --r-overlay: 16px;
+  --shadow-overlay: 0 30px 90px rgba(24, 29, 25, .22);
+  --shadow-float: 0 9px 22px rgba(24, 29, 25, .08);
+
+  --ease: cubic-bezier(.2, .8, .2, 1);
+  --fast: 140ms;
+  --standard: 220ms;
+  --emphasis: 360ms;
+  --sidebar: 188px;
+  --topbar: 70px;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #0d100f;
+  --canvas-grid: rgba(237, 241, 237, .025);
+  --surface: #141817;
+  --surface-2: #1a201d;
+  --surface-3: #222925;
+  --raised: #1d2421;
+  --line: #2c3430;
+  --line-strong: #46514b;
+  --text: #eef2ee;
+  --muted: #aab3ad;
+  --tertiary: #828e87;
+
+  --signal: #ff7755;
+  --signal-hover: #ff8c70;
+  --signal-soft: #341d17;
+  --signal-line: #8d3f2c;
+  --success: #5dc993;
+  --success-soft: #142b21;
+  --nochange: #62c0c2;
+  --nochange-soft: #13292a;
+  --warning: #e2b45a;
+  --warning-soft: #302715;
+  --failed: #f06e7a;
+  --failed-soft: #33191d;
+  --reconcile: #9c8ce7;
+  --reconcile-soft: #241f3c;
+  --side: #dc7ab8;
+  --side-soft: #34202d;
+
+  --shadow-overlay: 0 34px 110px rgba(0, 0, 0, .55);
+  --shadow-float: 0 10px 28px rgba(0, 0, 0, .25);
+}

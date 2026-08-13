@@ -148,7 +148,7 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
         if check["status"] == "failed":
             raise ValueError(str(check["summary"]))
     workspace["path"] = str(workspace_path)
-    for key in ("vcsKind", "hostingKind", "repositoryRoot", "remoteUrl"):
+    for key in ("vcsKind", "hostingKind", "repositoryRoot", "remoteUrl", "webBaseUrl"):
         if key in detection:
             workspace[key] = detection[key]
         else:
@@ -161,6 +161,12 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     if len(action_ids) != len(actions) or any(not value for value in action_ids) or len(set(action_ids)) != len(action_ids):
         raise ValueError("最终动作 ID 不能为空或重复")
     allowed = available_final_actions(detection)
+    delivery_log = normalized.get("deliveryLog")
+    if not isinstance(delivery_log, dict):
+        raise ValueError("必须配置交付日志")
+    for key, label in (("technologyTag", "技术域"), ("branchLabel", "分支标签"), ("versionFallback", "版本或兜底版本"), ("submitterName", "提交人姓名")):
+        if not str(delivery_log.get(key) or "").strip():
+            raise ValueError(f"交付日志缺少{label}")
     for action in actions:
         action_type = str(action.get("type", ""))
         if action_type not in allowed:
@@ -170,7 +176,7 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
             if output_directory is None:
                 raise ValueError("Patch 输出目录必须使用绝对路径")
             action["outputDirectory"] = str(output_directory)
-        if action_type in {"gitlabMr", "githubPr"}:
+        if action_type == "githubPr":
             targets = action.get("targetBranches")
             if not isinstance(targets, list) or not targets or any(not isinstance(value, str) or not value.strip() for value in targets):
                 raise ValueError(f"{action_type} 至少需要一个目标分支")
@@ -233,6 +239,9 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     actions = project.get("finalActions") or []
     checks.append(_check("delivery.actions", bool(actions), f"最终动作：{len(actions)} 个" if actions else "至少需要一个最终动作"))
     action_ids: set[str] = set()
+    delivery_log = project.get("deliveryLog") if isinstance(project.get("deliveryLog"), dict) else {}
+    log_ready = all(str(delivery_log.get(key) or "").strip() for key in ("technologyTag", "branchLabel", "versionFallback", "submitterName"))
+    checks.append(_check("delivery.log", log_ready, "交付日志已配置" if log_ready else "交付日志缺少技术域、分支标签、版本或提交人", "在最终动作顶部补全交付日志" if not log_ready else None))
     for index, action in enumerate(actions):
         action_id = str(action.get("id", ""))
         action_type = str(action.get("type", ""))
@@ -240,7 +249,7 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
         if action_id:
             action_ids.add(action_id)
         checks.append(_check(f"delivery.{index}.id", unique, f"动作 ID：{action_id or '未配置'}"))
-        supported = action_type in {"patch", "gitlabMr", "githubPr"}
+        supported = action_type in {"patch", "gitlabPush", "githubPr"}
         checks.append(_check(f"delivery.{index}.type", supported, f"动作类型：{action_type or '未配置'}"))
         if supported:
             allowed = available_final_actions(detection)
@@ -250,14 +259,14 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
                     f"delivery.{index}.capability",
                     capability_ok,
                     f"{action_type} 与 {detection.get('vcsKind')}/{detection.get('hostingKind')} 工作区兼容" if capability_ok else f"当前工作区不支持 {action_type}",
-                    "Patch 适用于全部有效工作区；GitLab MR/GitHub PR 只适用于对应托管类型" if not capability_ok else None,
+                    "Patch 适用于全部有效工作区；GitLab Push/GitHub PR 只适用于对应托管类型" if not capability_ok else None,
                 )
             )
         if action_type == "patch":
             output = _direct_path(action.get("outputDirectory"))
             output_ok = _writable_directory(output)
             checks.append(_check(f"delivery.{index}.patch_output", output_ok, f"Patch 输出：{output}" if output_ok else "Patch 输出目录无效或不可写", "请选择当前服务进程可写的绝对目录" if not output_ok else None))
-        if action_type in {"gitlabMr", "githubPr"}:
+        if action_type in {"gitlabPush", "githubPr"}:
             root_value = detection.get("repositoryRoot")
             repository = Path(str(root_value)) if root_value else None
             git_binding = loaded.config.executableBindings.get("git-cli", {})
@@ -269,11 +278,12 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
             else:
                 healthy, summary = _git_delivery_health(repository, [str(item) for item in git_command])
             checks.append(_check(f"delivery.{index}.remote", healthy, summary, "检查修改工作区、origin 与当前机器的 Git 认证" if not healthy else None))
-            targets = action.get("targetBranches") or []
-            targets_ok = isinstance(targets, list) and bool(targets) and all(isinstance(value, str) and bool(value.strip()) for value in targets) and len(set(targets)) == len(targets)
-            checks.append(_check(f"delivery.{index}.targets", targets_ok, f"目标分支：{len(targets)} 个" if targets_ok else "目标分支不能为空或重复"))
+            if action_type == "githubPr":
+                targets = action.get("targetBranches") or []
+                targets_ok = isinstance(targets, list) and bool(targets) and all(isinstance(value, str) and bool(value.strip()) for value in targets) and len(set(targets)) == len(targets)
+                checks.append(_check(f"delivery.{index}.targets", targets_ok, f"目标分支：{len(targets)} 个" if targets_ok else "目标分支不能为空或重复"))
 
-    if any(str(action.get("type")) in {"gitlabMr", "githubPr"} for action in actions):
+    if any(str(action.get("type")) in {"gitlabPush", "githubPr"} for action in actions):
         sanitized_project_id = re.sub(r"[^A-Za-z0-9._-]+", "-", project_id).strip(".-") or "project"
         fallback = loaded.data_root / "fallback-patches" / sanitized_project_id
         fallback_ok = _writable_directory(fallback)

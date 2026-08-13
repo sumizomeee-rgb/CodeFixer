@@ -32,7 +32,7 @@ def _referenced_executables(loaded: LoadedConfig) -> set[str]:
             if step.get("executableRef"):
                 references.add(str(step["executableRef"]))
         for action in project.get("finalActions") or []:
-            if action.get("type") == "gitlabMr":
+            if action.get("type") == "gitlabPush":
                 references.add("git-cli")
             elif action.get("type") == "githubPr":
                 references.update(("git-cli", "gh-cli"))

@@ -24,15 +24,17 @@ export type ModificationWorkspaceConfig = {
   hostingKind?:HostingKind
   repositoryRoot?:string
   remoteUrl?:string
+  webBaseUrl?:string
   allowedRoots?:string[]
   deniedRoots?:string[]
   allowedExtensions?:string[]
 }
 
-export type PatchActionConfig = { id:string; type:'patch'; outputDirectory?:string; filenameTemplate?:string; overwrite?:boolean; required?:boolean }
-export type GitLabMrActionConfig = { id:string; type:'gitlabMr'; targetBranches:string[]; titleTemplate?:string; descriptionTemplate?:string; required?:boolean }
+export type PatchActionConfig = { id:string; type:'patch'; outputDirectory?:string; overwrite?:boolean; required?:boolean }
+export type GitLabPushActionConfig = { id:string; type:'gitlabPush'; required?:boolean }
 export type GitHubPrActionConfig = { id:string; type:'githubPr'; targetBranches:string[]; titleTemplate?:string; descriptionTemplate?:string; required?:boolean }
-export type FinalActionConfig = PatchActionConfig | GitLabMrActionConfig | GitHubPrActionConfig
+export type FinalActionConfig = PatchActionConfig | GitLabPushActionConfig | GitHubPrActionConfig
+export type DeliveryLogConfig = { technologyTag:string; branchLabel:string; versionSource:'fixed'|'ticketFixVersion'; versionFallback:string; submitterName:string }
 
 export type AppConfig = {
   schemaVersion:number
@@ -54,6 +56,7 @@ export type ProjectConfig = {
   localizationSource?:LocalizationSourceConfig
   modificationWorkspace?:ModificationWorkspaceConfig
   verification?:{timeoutSeconds?:number;steps?:VerificationStepConfig[];allowNoAutomatedTests?:boolean;reason?:string}
+  deliveryLog?:DeliveryLogConfig
   finalActions?:FinalActionConfig[]
 }
 
@@ -69,6 +72,7 @@ export type WorkspaceDetection={
   hostingKind:HostingKind
   repositoryRoot?:string
   remoteUrl?:string
+  webBaseUrl?:string
   summary:string
   checks:Array<{id:string;status:'ready'|'warning'|'failed';summary:string;detail?:unknown}>
 }

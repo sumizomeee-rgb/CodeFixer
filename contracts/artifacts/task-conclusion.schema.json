@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CodeFixer task conclusion",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "outcome", "headline", "cause", "resolution"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "outcome": {"enum": ["changed", "no_change", "blocked", "failed", "canceled"]},
+    "headline": {"type": "string", "minLength": 1, "maxLength": 120},
+    "cause": {"type": "string", "minLength": 1, "maxLength": 500},
+    "resolution": {"type": "string", "minLength": 1, "maxLength": 500}
+  }
+}

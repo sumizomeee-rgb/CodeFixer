@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import sqlite3
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -8,6 +10,35 @@ from codefixer.infrastructure.database import connect_database
 from codefixer.infrastructure.task_store import TaskStore
 
 router = APIRouter(prefix='/api/tasks', tags=['tasks'])
+
+
+def _artifact_payload(data_root: Path, relative_path: object) -> dict[str, object] | None:
+    try:
+        target = (data_root / str(relative_path)).resolve()
+        target.relative_to(data_root.resolve())
+        if not target.is_file() or target.stat().st_size > 2 * 1024 * 1024:
+            return None
+        value = json.loads(target.read_text(encoding='utf-8'))
+        return value if isinstance(value, dict) else None
+    except (OSError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _enrich_task_artifacts(task: dict[str, object], data_root: Path) -> dict[str, object]:
+    for raw_run in task.get('runs') or []:
+        if not isinstance(raw_run, dict):
+            continue
+        by_type = {str(item.get('artifact_type')): item for item in raw_run.get('artifacts') or [] if isinstance(item, dict)}
+        for artifact_type, field in (
+            ('task_conclusion', 'conclusion'),
+            ('change_manifest', 'change_manifest'),
+            ('delivery_metadata', 'delivery_metadata'),
+            ('verification', 'verification'),
+        ):
+            item = by_type.get(artifact_type)
+            if item:
+                raw_run[field] = _artifact_payload(data_root, item.get('relative_path'))
+    return task
 
 
 def _store(request: Request) -> tuple[TaskStore, sqlite3.Connection]:
@@ -29,7 +60,7 @@ def get_task(task_id: str, request: Request) -> dict[str, object]:
     store, connection = _store(request)
     try:
         try:
-            return store.get_task(task_id)
+            return _enrich_task_artifacts(store.get_task(task_id), request.app.state.config_store.loaded.data_root)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail={'code':'task_not_found','message':f'任务不存在：{task_id}'}) from exc
     finally:

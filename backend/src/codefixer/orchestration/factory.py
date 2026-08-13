@@ -13,8 +13,7 @@ from codefixer.adapters.delivery.github import (
 )
 from codefixer.adapters.delivery.gitlab import (
     GitDeliveryMaterializer,
-    GitLabMrDelivery,
-    GitLabMrFinalAction,
+    GitLabPushFinalAction,
 )
 from codefixer.adapters.delivery_patch import FallbackPatchFinalAction, PatchFinalAction
 from codefixer.adapters.sources.directory import DirectoryReadOnlySourceAdapter
@@ -210,13 +209,16 @@ class RunExecutor:
                 raise ValueError("frozen config snapshot has no project")
             SchemaRegistry(self.contracts_root).validate("change-manifest", manifest)
             patch_path = manifest_path.parent / str(manifest["diff"]["path"])
+            delivery_metadata_path = manifest_path.parent / "delivery-metadata.json"
+            delivery_metadata = json.loads(delivery_metadata_path.read_text(encoding="utf-8"))
+            SchemaRegistry(self.contracts_root).validate("delivery-metadata", delivery_metadata)
             actions = self._build_delivery_actions(loaded, project)
             stage_id = tasks.start_stage(run_id, "deliver", tasks.next_stage_attempt(run_id, "deliver"))
             coordinator = DeliveryCoordinator(
                 tuple(actions),
                 fallback_action=FallbackPatchFinalAction(store=DeliveryStore(self.connection), data_root=loaded.data_root, project_id=str(project.get("id", "project"))),
             )
-            report = coordinator.execute_report(FrozenDeliveryContext(task_id=task_id, run_id=run_id, change_version=int(manifest["change_version"]), source_id=str(manifest["modification_source"]["id"]), base_revision=str(manifest["modification_source"]["base_revision"]), patch_path=patch_path, patch_sha256=str(manifest["diff"]["sha256"]), manifest_path=manifest_path))
+            report = coordinator.execute_report(FrozenDeliveryContext(task_id=task_id, run_id=run_id, change_version=int(manifest["change_version"]), source_id=str(manifest["modification_source"]["id"]), base_revision=str(manifest["modification_source"]["base_revision"]), patch_path=patch_path, patch_sha256=str(manifest["diff"]["sha256"]), manifest_path=manifest_path, delivery_metadata_path=delivery_metadata_path, commit_subject=str(delivery_metadata["commit_subject"]), patch_filename=str(delivery_metadata["patch_filename"]), ticket_key=str(delivery_metadata["ticket_key"])))
             results = report.results
             if not report.succeeded:
                 tasks.finish_stage(stage_id, status="failed", failure={"code": "delivery_failed"})
@@ -242,16 +244,18 @@ class RunExecutor:
                 output = Path(output_value).resolve() if output_value else None
                 if output is None:
                     raise ValueError(f"Patch output directory missing for {action_id}")
-                actions.append(PatchFinalAction(action_id=action_id, action_version=1, store=delivery_store, output_directory=output, filename_template=str(action.get("filenameTemplate", "{task_id}-{run_id}.patch")), overwrite=bool(action.get("overwrite", False))))
-            elif action.get("type") == "gitlabMr":
+                actions.append(PatchFinalAction(action_id=action_id, action_version=1, store=delivery_store, output_directory=output, overwrite=bool(action.get("overwrite", False))))
+            elif action.get("type") == "gitlabPush":
                 workspace = dict(project.get("modificationWorkspace") or {})
                 materialization_value = str(workspace.get("repositoryRoot") or workspace.get("path") or "")
                 materialization = Path(materialization_value).resolve() if materialization_value else None
                 if materialization is None or not materialization.is_dir():
                     raise ValueError(f"GitLab repository missing for {action_id}")
                 materializer = GitDeliveryMaterializer(materialization, self._command(loaded.config.executableBindings, "git-cli"))
-                targets = tuple(str(item) for item in (action.get("targetBranches") or []))
-                actions.append(GitLabMrFinalAction(action_id=action_id, action_version=1, delivery=GitLabMrDelivery(delivery_store, materializer), config=action, target_branches=targets, work_root=loaded.data_root / "delivery-work", title_template=str(action.get("titleTemplate", "[CodeFixer] {task_id}")), description_template=str(action.get("descriptionTemplate", "Automated repair from CodeFixer run {run_id}."))))
+                web_base_url = str(workspace.get("webBaseUrl") or "").strip()
+                if not web_base_url:
+                    raise ValueError(f"GitLab Web address missing for {action_id}; re-detect the workspace")
+                actions.append(GitLabPushFinalAction(action_id=action_id, action_version=1, store=delivery_store, materializer=materializer, config=action, work_root=loaded.data_root / "delivery-work", web_base_url=web_base_url))
             elif action.get("type") == "githubPr":
                 workspace = dict(project.get("modificationWorkspace") or {})
                 materialization_value = str(workspace.get("repositoryRoot") or workspace.get("path") or "")
