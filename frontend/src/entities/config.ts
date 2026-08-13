@@ -16,7 +16,7 @@ export type AppConfig = {
   schemaVersion:number
   server:{host:string;port:number}
   storage:{dataRoot:string}
-  execution:{mode:ExecutionMode;maxConcurrentTasks:number;maxRepairAttempts:number}
+  execution:{mode:ExecutionMode;agentProfileId:string;maxConcurrentTasks:number;maxRepairAttempts:number}
   pathBindings:Record<string,string>
   executableBindings:Record<string,ExecutableBinding>
   ticketProviders:TicketProviderConfig[]

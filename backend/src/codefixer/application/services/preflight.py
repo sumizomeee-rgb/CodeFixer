@@ -47,25 +47,24 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     executable = str(command[0]) if isinstance(command, list) and command else ""
     executable_ok = bool(executable and (Path(executable).is_file() or shutil.which(executable)))
     checks.append(_check("source.executable", executable_ok, f"CLI 可用：{executable}" if executable_ok else f"CLI 不可用：{executable_ref or '未配置'}", "检查 executableBindings 与部署用户 PATH" if not executable_ok else None))
+
     profiles = {str(item.get("id")): item for item in loaded.config.agentProfiles if item.get("id")}
-    agents = project.get("agents") or {}
-    for role in ("scopeDiscovery", "discovery", "repair", "review"):
-        profile_id = str(agents.get(role, ""))
-        raw_profile = profiles.get(profile_id)
-        profile_ok = bool(profile_id and raw_profile is not None)
-        checks.append(_check(f"agent.{role}", profile_ok, f"{role} profile：{profile_id or '未配置'}", "配置并引用有效 Agent profile" if not profile_ok else None))
-        if not profile_ok or raw_profile is None:
-            continue
+    profile_id = loaded.config.execution.agentProfileId.strip()
+    raw_profile = profiles.get(profile_id)
+    profile_ok = bool(profile_id and raw_profile is not None)
+    checks.append(_check("agent.current", profile_ok, f"当前模型：{profile_id or '未配置'}", "在设置中选择当前模型" if not profile_ok else None))
+    if profile_ok and raw_profile is not None:
         try:
             profile = parse_agent_profile(raw_profile)
         except (TypeError, ValueError) as exc:
-            checks.append(_check(f"agent.{role}.profile", False, f"Agent profile 无效：{exc}", "检查 runtime、executableRef、timeoutSeconds 与 extraArgs"))
-            continue
-        binding = loaded.config.executableBindings.get(profile.executable_ref, {})
-        agent_command = binding.get("command") if isinstance(binding, dict) else None
-        agent_executable = str(agent_command[0]) if isinstance(agent_command, list) and agent_command else ""
-        agent_executable_ok = bool(agent_executable and (Path(agent_executable).is_file() or shutil.which(agent_executable)))
-        checks.append(_check(f"agent.{role}.executable", agent_executable_ok, f"{profile.runtime} CLI：{agent_executable or profile.executable_ref}", "检查 Agent profile executableRef 与当前机器 executableBindings/PATH" if not agent_executable_ok else None))
+            checks.append(_check("agent.current.profile", False, f"当前模型配置无效：{exc}", "重新选择当前模型或检查 Agent runtime 配置"))
+        else:
+            agent_binding = loaded.config.executableBindings.get(profile.executable_ref, {})
+            agent_command = agent_binding.get("command") if isinstance(agent_binding, dict) else None
+            agent_executable = str(agent_command[0]) if isinstance(agent_command, list) and agent_command else ""
+            agent_executable_ok = bool(agent_executable and (Path(agent_executable).is_file() or shutil.which(agent_executable)))
+            checks.append(_check("agent.current.executable", agent_executable_ok, f"{profile.runtime} CLI：{agent_executable or profile.executable_ref}", "检查当前模型对应 CLI 与当前机器 executableBindings/PATH" if not agent_executable_ok else None))
+
     verification = project.get("verification") or {}
     steps = verification.get("steps") or []
     allow_no_tests = bool(verification.get("allowNoAutomatedTests"))

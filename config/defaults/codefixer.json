@@ -2,10 +2,16 @@
   "schemaVersion": 1,
   "server": {"host": "0.0.0.0", "port": 9522},
   "storage": {"dataRoot": "../../data"},
-  "execution": {"mode": "awaitingStart", "maxConcurrentTasks": 3, "maxRepairAttempts": 3},
+  "execution": {"mode": "awaitingStart", "agentProfileId": "claude-sonnet", "maxConcurrentTasks": 3, "maxRepairAttempts": 3},
   "ticketProviders": [],
   "agentProfiles": [
     {"id": "claude-code", "runtime": "claudeCode", "executableRef": "claude-code-cli", "timeoutSeconds": 1800},
+    {"id": "claude-haiku", "runtime": "claudeCode", "executableRef": "claude-code-cli", "model": "claude-haiku-4-5", "timeoutSeconds": 1800},
+    {"id": "claude-sonnet", "runtime": "claudeCode", "executableRef": "claude-code-cli", "model": "sonnet", "timeoutSeconds": 1800},
+    {"id": "claude-opus", "runtime": "claudeCode", "executableRef": "claude-code-cli", "model": "opus", "timeoutSeconds": 1800},
+    {"id": "gpt-5.6-sol", "runtime": "codex", "executableRef": "codex-cli", "model": "gpt-5.6-sol", "timeoutSeconds": 1800},
+    {"id": "gpt-5.6-terra", "runtime": "codex", "executableRef": "codex-cli", "model": "gpt-5.6-terra", "timeoutSeconds": 1800},
+    {"id": "gpt-5.6-luna", "runtime": "codex", "executableRef": "codex-cli", "model": "gpt-5.6-luna", "timeoutSeconds": 1800},
     {"id": "codex", "runtime": "codex", "executableRef": "codex-cli", "timeoutSeconds": 1800},
     {"id": "opencode", "runtime": "opencode", "executableRef": "opencode-cli", "timeoutSeconds": 1800}
   ],

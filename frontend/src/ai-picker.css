@@ -9,7 +9,15 @@
 .ai-choice small{margin-top:3px;color:var(--muted);font-size:9px;line-height:1.45}
 .ai-choice em{font-style:normal;font-size:9px;font-weight:700;color:var(--tertiary)}
 .ai-choice:hover:not(:disabled) em{color:var(--signal)}
-.ai-choice:disabled{cursor:default;opacity:.58;background:var(--surface2)}
-.ai-choice:disabled em{color:var(--success)}
+.ai-choice.selected{border-color:color-mix(in srgb,var(--signal) 55%,var(--line));background:var(--signalSoft)}
+.ai-choice.selected:disabled{cursor:default;opacity:1}
+.ai-choice.selected em{color:var(--signal)}
 .ai-picker-modal .runtime-mark{width:30px;height:30px}
 .ai-picker-modal .runtime-mark svg{width:19px;height:19px}
+.current-model-row{display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;margin-top:16px;padding:12px 0 2px;border-top:1px solid var(--line)}
+.current-model-row .runtime-mark{width:32px;height:32px}
+.current-model-row b,.current-model-row small{display:block}
+.current-model-row b{font-size:13px}
+.current-model-row small{margin-top:3px;color:var(--muted);font-size:10px}
+.current-model-empty{width:100%;margin-top:14px;padding:14px;border:1px dashed var(--line-strong);border-radius:11px;background:transparent;color:var(--muted);text-align:left}
+.current-model-empty:hover{border-color:var(--signal);color:var(--text)}

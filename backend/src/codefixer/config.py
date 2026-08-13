@@ -23,6 +23,7 @@ class StorageSettings(BaseModel):
 class ExecutionSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     mode: str = "awaitingStart"
+    agentProfileId: str = "claude-sonnet"
     maxConcurrentTasks: int = Field(default=3, ge=1, le=64)
     maxRepairAttempts: int = Field(default=3, ge=1, le=20)
 

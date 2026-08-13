@@ -90,11 +90,16 @@ class RunExecutor:
         stability_guard = PreDeliveryStabilityGuard(build_ticket_provider(provider_config, self.config_store.get_secret), source)
 
         profiles = {str(item.get("id")): dict(item) for item in loaded.config.agentProfiles if item.get("id")}
-        agent_ids = project.get("agents") or {}
-        scope_discovery_agent = build_agent_runtime(profiles[str(agent_ids["scopeDiscovery"])], loaded.config.executableBindings)
-        discovery_agent = build_agent_runtime(profiles[str(agent_ids["discovery"])], loaded.config.executableBindings)
-        repair_agent = build_agent_runtime(profiles[str(agent_ids["repair"])], loaded.config.executableBindings)
-        review_agent = build_agent_runtime(profiles[str(agent_ids["review"])], loaded.config.executableBindings)
+        current_profile_id = loaded.config.execution.agentProfileId.strip()
+        current_profile = profiles.get(current_profile_id)
+        if current_profile is None:
+            raise ValueError(f"current agent profile does not exist: {current_profile_id}")
+        # Every LLM-consuming stage in a run uses the same globally selected model.
+        # Build separate runtime objects so the stages remain independent sessions.
+        scope_discovery_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
+        discovery_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
+        repair_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
+        review_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)
 
         verification_config = project.get("verification") or {}
         default_timeout = int(verification_config.get("timeoutSeconds", 1200))

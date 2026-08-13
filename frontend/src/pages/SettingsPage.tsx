@@ -4,27 +4,29 @@ import { api } from '../lib/api'
 
 type DraftAgent = AgentProfileConfig
 type DraftConnection = ConnectionConfig
-type AgentChoice = { id:string; runtime:AgentRuntime; model?:string; label:string; note:string }
+type AgentChoice = { id:string; runtime:AgentRuntime; model:string; label:string; note:string }
 
 const emptyConnection = (): DraftConnection => ({ id: '', type: 'gitlab', baseUrl: '', tokenSecretRef: '' })
 const agentChoices:AgentChoice[] = [
-  { id:'claude-code', runtime:'claudeCode', label:'Claude Code', note:'跟随 Claude Code 默认模型' },
-  { id:'claude-sonnet', runtime:'claudeCode', model:'sonnet', label:'Claude Sonnet', note:'平衡速度与能力' },
-  { id:'claude-opus', runtime:'claudeCode', model:'opus', label:'Claude Opus', note:'更强推理' },
-  { id:'codex', runtime:'codex', label:'Codex', note:'跟随 Codex 默认模型' },
-  { id:'opencode', runtime:'opencode', label:'OpenCode', note:'跟随 OpenCode 默认模型' },
+  { id:'claude-haiku', runtime:'claudeCode', model:'claude-haiku-4-5', label:'Claude Haiku', note:'更快、更省，适合高频任务' },
+  { id:'claude-sonnet', runtime:'claudeCode', model:'sonnet', label:'Claude Sonnet', note:'速度与能力平衡' },
+  { id:'claude-opus', runtime:'claudeCode', model:'opus', label:'Claude Opus', note:'复杂修复与深度推理' },
+  { id:'gpt-5.6-sol', runtime:'codex', model:'gpt-5.6-sol', label:'GPT-5.6 Sol', note:'复杂工程与高难度修复' },
+  { id:'gpt-5.6-terra', runtime:'codex', model:'gpt-5.6-terra', label:'GPT-5.6 Terra', note:'能力与消耗平衡' },
+  { id:'gpt-5.6-luna', runtime:'codex', model:'gpt-5.6-luna', label:'GPT-5.6 Luna', note:'低消耗、高频任务' },
 ]
 const executableRef=(runtime:AgentRuntime)=>runtime==='claudeCode'?'claude-code-cli':runtime==='codex'?'codex-cli':'opencode-cli'
 const profileFromChoice=(choice:AgentChoice):DraftAgent=>({id:choice.id,runtime:choice.runtime,executableRef:executableRef(choice.runtime),model:choice.model,timeoutSeconds:1800})
 const runtimeLabel=(runtime:AgentRuntime)=>runtime==='claudeCode'?'Claude Code':runtime==='codex'?'Codex':'OpenCode'
 const profileLabel=(profile:AgentProfileConfig)=>{
-  if(profile.runtime==='claudeCode'){
-    if(!profile.model)return 'Claude Code · 默认模型'
-    if(profile.model==='sonnet')return 'Claude Sonnet'
-    if(profile.model==='opus')return 'Claude Opus'
-    return `Claude · ${profile.model}`
-  }
-  return `${runtimeLabel(profile.runtime)}${profile.model?` · ${profile.model}`:' · 默认模型'}`
+  if(profile.id==='claude-haiku'||profile.model==='claude-haiku-4-5')return 'Claude Haiku'
+  if(profile.id==='claude-sonnet'||profile.model==='sonnet')return 'Claude Sonnet'
+  if(profile.id==='claude-opus'||profile.model==='opus')return 'Claude Opus'
+  if(profile.model==='gpt-5.6-sol')return 'GPT-5.6 Sol'
+  if(profile.model==='gpt-5.6-terra')return 'GPT-5.6 Terra'
+  if(profile.model==='gpt-5.6-luna')return 'GPT-5.6 Luna'
+  if(profile.model)return `${runtimeLabel(profile.runtime)} · ${profile.model}`
+  return `${runtimeLabel(profile.runtime)} · 默认模型`
 }
 
 function AgentMark({ runtime }:{ runtime:AgentRuntime }) {
@@ -43,21 +45,28 @@ export function SettingsPage({ onModeChanged }:{ onModeChanged:(mode:ExecutionMo
   const changeMode=async(mode:ExecutionMode)=>{setBusy(true);setError('');try{const r=await api.setExecutionMode(mode,settings.etag);const next={...settings,config:{...settings.config,execution:{...settings.config.execution,mode}},etag:r.etag};setSettings(next);onModeChanged(mode,r.etag);setNotice('已保存')}catch(e){setError(e instanceof Error?e.message:'模式保存失败')}finally{setBusy(false)}}
   const saveSecret=async()=>{if(!secretKey||!secretValue)return;setBusy(true);try{await api.setSecret(secretKey,secretValue);setSettings({...settings,secrets:{...settings.secrets,[secretKey]:{configured:true}}});setSecretValue('');setNotice('凭据已保存')}catch(e){setError(e instanceof Error?e.message:'凭据保存失败')}finally{setBusy(false)}}
   const savePath=async()=>{if(!pathId||!pathValue)return;const next=await put({...settings.config,pathBindings:{...settings.config.pathBindings,[pathId]:pathValue}},'本机路径已保存');if(next){setPathId('');setPathValue('')}}
-  const isChoiceAdded=(choice:AgentChoice)=>settings.config.agentProfiles.some(item=>item.id===choice.id||(item.runtime===choice.runtime&&(item.model??'')===(choice.model??'')&&item.executableRef===executableRef(choice.runtime)))
-  const addAgentChoice=async(choice:AgentChoice)=>{if(isChoiceAdded(choice)){setNotice(`${choice.label} 已经在可选列表中`);return}const profile=profileFromChoice(choice);const next=await put({...settings.config,agentProfiles:[...settings.config.agentProfiles,profile]},`${choice.label} 已加入项目可选列表`);if(next)setAgentPicker(false)}
-  const addPreset=async(runtime:AgentRuntime)=>{const choice=agentChoices.find(item=>item.runtime===runtime&&!item.model);if(choice)await addAgentChoice(choice)}
+  const chooseModel=async(choice:AgentChoice)=>{
+    const profile=profileFromChoice(choice)
+    const existing=settings.config.agentProfiles.findIndex(item=>item.id===choice.id)
+    const profiles=[...settings.config.agentProfiles]
+    if(existing>=0)profiles[existing]={...profiles[existing],...profile};else profiles.push(profile)
+    const next=await put({...settings.config,agentProfiles:profiles,execution:{...settings.config.execution,agentProfileId:choice.id}},`当前模型已切换为 ${choice.label}`)
+    if(next){setAgentPicker(false);void refreshReadiness().catch(()=>{})}
+  }
   const saveConnection=async()=>{if(!connection?.id||!connection.baseUrl||!connection.tokenSecretRef)return;if(settings.config.connections.some(item=>item.id===connection.id)){setError(`名称已存在：${connection.id}`);return}const next=await put({...settings.config,connections:[...settings.config.connections,connection]},'GitLab 连接已保存');if(next)setConnection(null)}
   const dependencyChecks=readiness?.checks.filter(item=>item.id.startsWith('dependency.'))??[]
   const coreChecks=readiness?.checks.filter(item=>!item.id.startsWith('dependency.'))??[]
-  return <section className="page-stack"><div className="page-heading"><div><h1>设置</h1><p>日常只需配置运行方式、AI 助手和凭据。</p></div></div>{notice&&<button className="notice-strip success-note" onClick={()=>setNotice('')}>{notice}</button>}{error&&<button className="notice-strip error-note" onClick={()=>setError('')}>{error}</button>}
+  const currentProfile=settings.config.agentProfiles.find(item=>item.id===settings.config.execution.agentProfileId)
+  const currentHealth=currentProfile?dependencyChecks.find(item=>item.dependencyId===currentProfile.executableRef)?.status??'unknown':'failed'
+  return <section className="page-stack"><div className="page-heading"><div><h1>设置</h1><p>日常只需配置运行方式、当前模型和凭据。</p></div></div>{notice&&<button className="notice-strip success-note" onClick={()=>setNotice('')}>{notice}</button>}{error&&<button className="notice-strip error-note" onClick={()=>setError('')}>{error}</button>}
   <div className="settings-grid simplified-settings">
   <article className="settings-card settings-environment"><div className="card-title-row"><div><span className="card-index">01 · RUNTIME</span><h2>依赖状态</h2><p>服务核心与本机命令的实时可用性。绿灯可用，黄灯需留意，红灯会阻止相关任务。</p></div><button className="ghost framed" onClick={()=>void refreshReadiness()}>重新检查</button></div><div className="readiness-summary"><strong className={readiness?.status??'checking'}>{readiness?.status==='ready'?'全部就绪':readiness?.status==='warning'?'可运行，有提醒':readiness?.status==='not_ready'?'存在阻断':'检查中'}</strong><span>{readiness?`${coreChecks.filter(item=>item.status==='ready').length}/${coreChecks.length} 核心检查通过 · ${dependencyChecks.length} 项命令依赖`:'正在逐项执行版本检查'}</span></div><div className="dependency-grid">{dependencyChecks.map(item=><div className={`dependency-row ${item.status}`} key={item.id}><i/><div><b>{item.dependencyId}</b><small>{item.summary}</small></div><code>{item.version??item.command??'—'}</code></div>)}</div></article>
   <article className="settings-card settings-mode"><span className="card-index">02 · CONTROL</span><h2>运行方式</h2><p>选择新任务是自动开始，还是先等你确认。</p><div className="mode-callout"><b>{settings.config.execution.mode==='automatic'?'静默接管':'人工放行'}</b><small>{settings.config.execution.mode==='automatic'?'工单进入后自动分析、修复并交付':'任务进入 Pending，只有你点击开始才执行'}</small></div><div className="segmented"><button disabled={busy} className={settings.config.execution.mode==='awaitingStart'?'selected':''} onClick={()=>void changeMode('awaitingStart')}>待我开始</button><button disabled={busy} className={settings.config.execution.mode==='automatic'?'selected':''} onClick={()=>void changeMode('automatic')}>全自动</button></div></article>
-  <article className="settings-card settings-agents"><div className="card-title-row"><div><span className="card-index">03 · AGENTS</span><h2>AI 助手</h2><p>只选择要用的 AI / 模型；命令、超时和运行参数由系统接管。</p></div><button className="ghost framed" onClick={()=>setAgentPicker(true)}>添加模型</button></div>{settings.config.agentProfiles.length===0?<div className="agent-presets"><div><b>选择本机已经安装的 Agent</b><small>加入列表后，创建项目时就能直接选择。</small></div><button disabled={busy} onClick={()=>void addPreset('claudeCode')}><AgentMark runtime="claudeCode"/>启用 Claude Code</button><button disabled={busy} onClick={()=>void addPreset('codex')}><AgentMark runtime="codex"/>启用 Codex</button><button disabled={busy} onClick={()=>void addPreset('opencode')}><AgentMark runtime="opencode"/>启用 OpenCode</button></div>:<div className="profile-grid">{settings.config.agentProfiles.map(profile=><div className="profile-row" key={profile.id}><AgentMark runtime={profile.runtime}/><div><b>{profileLabel(profile)}</b><small>{profile.model?'固定模型':'跟随工具默认模型'}</small></div><span className={`profile-health ${dependencyChecks.find(item=>item.dependencyId===profile.executableRef)?.status??'unknown'}`}/></div>)}</div>}</article>
+  <article className="settings-card settings-agents"><div className="card-title-row"><div><span className="card-index">03 · MODEL</span><h2>当前模型</h2><p>所有需要 LLM 的阶段统一使用这个模型。</p></div><button className="ghost framed" onClick={()=>setAgentPicker(true)}>切换</button></div>{currentProfile?<div className="current-model-row"><AgentMark runtime={currentProfile.runtime}/><div><b>{profileLabel(currentProfile)}</b><small>Scope · Discovery · Repair · Review</small></div><span className={`profile-health ${currentHealth}`}/></div>:<button className="current-model-empty" onClick={()=>setAgentPicker(true)}>选择当前模型</button>}</article>
   <article className="settings-card settings-gitlab"><div className="card-title-row"><div><span className="card-index">04 · DELIVERY</span><h2>GitLab</h2><p>需要自动创建合并请求时再配置。</p></div><button className="ghost framed" onClick={()=>setConnection(emptyConnection())}>添加</button></div>{settings.config.connections.length===0?<div className="mini-empty">尚未连接</div>:<div className="binding-list">{settings.config.connections.map(item=><div key={item.id}><b>{item.id}</b><span>{item.baseUrl}</span></div>)}</div>}</article>
   <article className="settings-card settings-secrets"><span className="card-index">05 · LOCAL ONLY</span><h2>凭据</h2><p>密码和 Token 只保存在当前机器的 <code>.local</code> 配置中，不进 Git，也不会在界面中回显。</p><div className="secret-list">{Object.keys(settings.secrets).map(key=>{const value=settings.secrets[key];return <span key={key}><i className={value?.configured?'ready-dot':''}/>{key}</span>})}</div><div className="secret-form"><input placeholder="凭据名称" value={secretKey} onChange={e=>setSecretKey(e.target.value)}/><input type="password" placeholder="密码或 Token" value={secretValue} onChange={e=>setSecretValue(e.target.value)}/><button className="primary compact" disabled={busy||!secretKey||!secretValue} onClick={()=>void saveSecret()}>保存</button></div></article></div>
   <details className="settings-advanced"><summary>高级：本机环境</summary><div className="settings-grid advanced-grid"><article className="settings-card"><h2>路径</h2><div className="binding-list">{Object.entries(settings.config.pathBindings).map(([id,path])=><div key={id}><code>{id}</code><span>{path}</span></div>)}</div><div className="inline-builder"><input placeholder="引用名称" value={pathId} onChange={e=>setPathId(e.target.value)}/><input placeholder="本机路径" value={pathValue} onChange={e=>setPathValue(e.target.value)}/><button className="primary compact" disabled={busy||!pathId||!pathValue} onClick={()=>void savePath()}>添加</button></div></article><article className="settings-card"><h2>命令</h2><div className="binding-list">{Object.keys(settings.config.executableBindings).map(id=>{const binding=settings.config.executableBindings[id];return <div key={id}><code>{id}</code><span>{binding?.command?.join(' ')||'—'}</span></div>})}</div></article></div></details>
-  {agentPicker&&<div className="modal-backdrop"><div className="config-modal ai-picker-modal" role="dialog" aria-modal="true" aria-labelledby="ai-picker-title"><div className="modal-head"><div><h2 id="ai-picker-title">选择 AI</h2><p>选模型即可。运行命令、超时和其他参数继续使用系统默认值。</p></div><button className="icon-btn" onClick={()=>setAgentPicker(false)} aria-label="关闭">×</button></div><div className="ai-choice-list">{agentChoices.map(choice=>{const added=isChoiceAdded(choice);return <button className="ai-choice" key={choice.id} disabled={busy||added} onClick={()=>void addAgentChoice(choice)}><AgentMark runtime={choice.runtime}/><span><b>{choice.label}</b><small>{choice.note}</small></span><em>{added?'已添加':'选择'}</em></button>})}</div></div></div>}
+  {agentPicker&&<div className="modal-backdrop"><div className="config-modal ai-picker-modal" role="dialog" aria-modal="true" aria-labelledby="ai-picker-title"><div className="modal-head"><div><h2 id="ai-picker-title">切换当前模型</h2><p>这里只选择一个模型。新的 TaskRun 会用它完成所有 LLM 阶段。</p></div><button className="icon-btn" onClick={()=>setAgentPicker(false)} aria-label="关闭">×</button></div><div className="ai-choice-list">{agentChoices.map(choice=>{const selected=settings.config.execution.agentProfileId===choice.id;return <button className={`ai-choice ${selected?'selected':''}`} key={choice.id} disabled={busy||selected} onClick={()=>void chooseModel(choice)}><AgentMark runtime={choice.runtime}/><span><b>{choice.label}</b><small>{choice.note}</small></span><em>{selected?'当前':'切换'}</em></button>})}</div></div></div>}
   {connection&&<div className="modal-backdrop"><div className="config-modal"><div className="modal-head"><div><h2>连接 GitLab</h2></div><button className="icon-btn" onClick={()=>setConnection(null)} aria-label="关闭">×</button></div><div className="form-grid"><label>名称<input value={connection.id} onChange={e=>setConnection({...connection,id:e.target.value})} placeholder="例如：公司 GitLab"/></label><label>地址<input value={connection.baseUrl} onChange={e=>setConnection({...connection,baseUrl:e.target.value})} placeholder="https://gitlab.example.com"/></label><label>Token 凭据名称<input value={connection.tokenSecretRef} onChange={e=>setConnection({...connection,tokenSecretRef:e.target.value})} placeholder="gitlab-token"/></label></div><p className="form-hint">Token 的真实值在「凭据」中保存。</p><div className="modal-actions"><button className="ghost" onClick={()=>setConnection(null)}>取消</button><button className="primary compact" disabled={busy||!connection.id||!connection.baseUrl||!connection.tokenSecretRef} onClick={()=>void saveConnection()}>保存</button></div></div></div>}
   </section>
 }
