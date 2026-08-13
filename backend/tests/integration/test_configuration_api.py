@@ -15,7 +15,7 @@ def _client(tmp_path: Path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
-    defaults.write_text(json.dumps({"schemaVersion": 1, "server": {"host": "127.0.0.1", "port": 9522}, "storage": {"dataRoot": "../../data"}, "execution": {"mode": "awaitingStart", "agentProfileId": "agent-default", "maxConcurrentTasks": 3, "maxRepairAttempts": 3}, "agentProfiles": [{"id": "agent-default", "runtime": "codex", "executableRef": "git-cli"}], "executableBindings": {"git-cli": {"command": ["git"], "versionArgs": ["--version"], "versionConstraint": None}}, "pathBindings": {"repo": str(repo), "patches": "patches"}, "projects": []}), encoding="utf-8")
+    defaults.write_text(json.dumps({"schemaVersion": 1, "server": {"host": "127.0.0.1", "port": 9522}, "storage": {"dataRoot": "../../data"}, "execution": {"mode": "awaitingStart", "currentModelId": "agent-default", "maxConcurrentTasks": 3, "maxRepairAttempts": 3}, "agentProfiles": [{"id": "agent-default", "runtime": "codex", "executableRef": "git-cli"}], "executableBindings": {"git-cli": {"command": ["git"], "versionArgs": ["--version"], "versionConstraint": None}}, "pathBindings": {"repo": str(repo), "patches": "patches"}, "projects": []}), encoding="utf-8")
     frontend = tmp_path / "frontend"
     frontend.mkdir()
     (frontend / "index.html").write_text("CodeFixer", encoding="utf-8")

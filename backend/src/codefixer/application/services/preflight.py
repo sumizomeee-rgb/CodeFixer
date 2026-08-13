@@ -49,7 +49,7 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     checks.append(_check("source.executable", executable_ok, f"CLI 可用：{executable}" if executable_ok else f"CLI 不可用：{executable_ref or '未配置'}", "检查 executableBindings 与部署用户 PATH" if not executable_ok else None))
 
     profiles = {str(item.get("id")): item for item in loaded.config.agentProfiles if item.get("id")}
-    profile_id = loaded.config.execution.agentProfileId.strip()
+    profile_id = loaded.config.execution.currentModelId.strip()
     raw_profile = profiles.get(profile_id)
     profile_ok = bool(profile_id and raw_profile is not None)
     checks.append(_check("agent.current", profile_ok, f"当前模型：{profile_id or '未配置'}", "在设置中选择当前模型" if not profile_ok else None))

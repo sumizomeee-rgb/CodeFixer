@@ -90,10 +90,10 @@ class RunExecutor:
         stability_guard = PreDeliveryStabilityGuard(build_ticket_provider(provider_config, self.config_store.get_secret), source)
 
         profiles = {str(item.get("id")): dict(item) for item in loaded.config.agentProfiles if item.get("id")}
-        current_profile_id = loaded.config.execution.agentProfileId.strip()
+        current_profile_id = loaded.config.execution.currentModelId.strip()
         current_profile = profiles.get(current_profile_id)
         if current_profile is None:
-            raise ValueError(f"current agent profile does not exist: {current_profile_id}")
+            raise ValueError(f"current model does not exist: {current_profile_id}")
         # Every LLM-consuming stage in a run uses the same globally selected model.
         # Build separate runtime objects so the stages remain independent sessions.
         scope_discovery_agent = build_agent_runtime(current_profile, loaded.config.executableBindings)

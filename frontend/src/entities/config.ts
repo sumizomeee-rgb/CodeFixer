@@ -16,7 +16,7 @@ export type AppConfig = {
   schemaVersion:number
   server:{host:string;port:number}
   storage:{dataRoot:string}
-  execution:{mode:ExecutionMode;agentProfileId:string;maxConcurrentTasks:number;maxRepairAttempts:number}
+  execution:{mode:ExecutionMode;currentModelId:string;maxConcurrentTasks:number;maxRepairAttempts:number}
   pathBindings:Record<string,string>
   executableBindings:Record<string,ExecutableBinding>
   ticketProviders:TicketProviderConfig[]
@@ -29,7 +29,6 @@ export type AppConfig = {
 export type ProjectConfig = {
   id:string; name?:string; enabled?:boolean; routingRules?:RoutingRule[]
   modificationSource?:{id?:string;type?:'git'|'svn';repositoryRef?:string;executableRef?:string;allowedRoots?:string[];deniedRoots?:string[];allowedExtensions?:string[]}
-  agents?:{scopeDiscovery?:string;discovery?:string;repair?:string;review?:string}
   verification?:{timeoutSeconds?:number;steps?:VerificationStepConfig[];allowNoAutomatedTests?:boolean;reason?:string}
   finalActions?:FinalActionConfig[]
 }
