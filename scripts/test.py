@@ -48,7 +48,7 @@ def wait_ready(url: str, timeout: float = 30) -> None:
     while time.monotonic() < deadline:
         try:
             with urllib.request.urlopen(url, timeout=1) as response:
-                if b'\"ready\":true' in response.read().replace(b" ", b""):
+                if b'"ready":true' in response.read().replace(b" ", b""):
                     return
         except Exception:
             pass

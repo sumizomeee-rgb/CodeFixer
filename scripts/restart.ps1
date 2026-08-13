@@ -2,6 +2,15 @@ $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")
 
 $root = [IO.Path]::GetFullPath($PWD.Path)
+$venvPython = Join-Path $root "backend\.venv\Scripts\python.exe"
+$runScript = Join-Path $root "scripts\run.py"
+
+if (-not (Test-Path -LiteralPath $venvPython)) {
+    throw "Project virtual environment is missing. Run scripts\bootstrap.ps1 first."
+}
+if (-not (Test-Path -LiteralPath $runScript)) {
+    throw "scripts\run.py is missing."
+}
 
 function Get-CodeFixerProcesses {
     @(Get-CimInstance Win32_Process | Where-Object {
@@ -21,8 +30,6 @@ if ($targets.Count -gt 0) {
 
     # run.py starts `python -m codefixer`. taskkill /T already terminates the whole
     # child tree, so only kill target processes whose parent is not another target.
-    # This also avoids a harmless race where the child PID disappears before its
-    # own taskkill call and Windows reports "process not found".
     $targetIds = @($targets | ForEach-Object { [int]$_.ProcessId })
     $roots = @($targets | Where-Object { $targetIds -notcontains [int]$_.ParentProcessId })
 
@@ -30,9 +37,7 @@ if ($targets.Count -gt 0) {
         $pidToStop = [int]$process.ProcessId
         if (Get-Process -Id $pidToStop -ErrorAction SilentlyContinue) {
             # Redirect inside cmd.exe so Windows PowerShell 5.1 does not promote
-            # taskkill's stderr into NativeCommandError under ErrorAction=Stop.
-            # A disappearing PID is success for restart purposes; final liveness
-            # is checked below instead of trusting one taskkill exit code.
+            # taskkill stderr into NativeCommandError under ErrorAction=Stop.
             & $env:ComSpec /d /c "taskkill.exe /PID $pidToStop /T /F >nul 2>&1"
         }
     }
@@ -54,5 +59,5 @@ if ($targets.Count -gt 0) {
 }
 
 Write-Host "[CodeFixer] Building frontend and starting server..."
-& (Join-Path $PSScriptRoot "run.ps1") --build
+& $venvPython $runScript --build
 exit $LASTEXITCODE
