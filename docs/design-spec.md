@@ -1,7 +1,7 @@
 # CodeFixer 产品与技术设计 SPEC
 
 > 文档状态：V2 初版
-> 最后更新：2026-08-12
+> 最后更新：2026-08-13
 > 适用范围：CodeFixer 第一版实现与后续扩展
 > 本文是产品语义、任务协议和技术边界的唯一设计基准。
 
@@ -29,6 +29,7 @@ CodeFixer 不是某个业务项目的专用脚本，也不是一个把工单和�
 - 配置一个或多个工单来源。
 - 配置多个项目，每个项目定义一个修改源和一个或多个最终动作。
 - 选择“全自动”或“待我开始”。
+- 在系统设置中只选择一个当前模型，由所有 LLM 阶段统一使用。
 - 让多个任务在资源上限内并发运行。
 - 查看每个任务当前阶段、每次尝试、输入快照、Agent 产物、验证结果和失败原因。
 - 对一个 Bug 完成以下两种健康终态之一：
@@ -45,6 +46,9 @@ CodeFixer 不是某个业务项目的专用脚本，也不是一个把工单和�
 | 管理形态 | Web 管理界面 |
 | 默认服务端口 | `9522`，Web 与 API 同源 |
 | 执行模式 | 全自动 / 待我开始 |
+| 当前模型 | 全局只选择一个 `execution.currentModelId`；项目和阶段都不单独选择模型 |
+| 模型生效范围 | `scope_discovery`、`discovery`、`no_change_verify`、`repair`、`review` 等所有 LLM 调用统一使用当前模型；各阶段仍保持独立会话 |
+| 模型切换 | 一个 TaskRun 开始执行后固定使用当次解析出的模型；之后切换只影响后续开始执行的 TaskRun |
 | 手动启动语义 | 点击一次开始后，任务自动执行完整流程，不逐阶段等待审批 |
 | Bug 与修改源 | 一个 Bug 任务必须且只能绑定一个修改源 |
 | 最终动作 | 一个任务可以配置一个或多个最终动作 |
@@ -99,6 +103,14 @@ CodeFixer 的仓库、安装包和部署文档必须自包含：
 - 运行所需第三方程序、服务和包必须通过依赖清单、适配器契约与 Preflight 明示。
 - 当前机器的路径和凭据只允许出现在不入 Git 的本地覆盖与 Secret 存储中。
 
+### 3.9 单一当前模型，独立会话
+
+模型选择属于全局运行设置，不属于 Project，也不属于某个阶段。用户只选择一个“当前模型”；平台把该选择解析为具体 Agent Runtime、模型 ID 和可执行命令。
+
+同一个 TaskRun 中所有需要 LLM 的阶段使用同一个已解析模型，但每个阶段仍分别启动独立会话、分别记录 usage、费用、耗时和失败原因。独立会话用于职责隔离与审计，不意味着用户需要为不同阶段配置不同模型。
+
+Project、Task、Stage 的 UI 和公共配置不得重新引入“为 Scope / Discovery / Repair / Review 分别选模型”的交互。
+
 ## 4. 核心领域模型
 
 ### 4.1 TicketProvider
@@ -120,12 +132,13 @@ CodeFixer 的仓库、安装包和部署文档必须自包含：
 - 带优先级的工单路由规则。
 - 唯一 `ModificationSource`。
 - 可选知识源。
-- 范围调查、正式定位、Repair、Review 使用的 Agent profile；范围调查与正式定位可以引用同一 profile，但必须是独立会话。
 - 允许修改的路径与文件类型。
 - 验证命令和超时。
 - 修复循环上限。
 - 一个或多个 `FinalAction`。
 - 并发与共享资源限制。
+
+Project **不配置 Agent profile 或阶段模型**。范围调查、正式定位、Repair、No-change Verify 和 Review 等 LLM 阶段统一使用系统全局当前模型；它们之间的职责隔离通过独立会话、权限和入口协议实现，而不是通过项目级模型选择实现。
 
 项目配置不包含任何 CodeFixer 核心代码无法理解的隐式约定。业务特定规则应写入项目策略文档或适配器配置。
 
@@ -164,7 +177,7 @@ CodeFixer 的仓库、安装包和部署文档必须自包含：
 
 项目必须至少配置一个最终动作；动作 ID 在项目内唯一。每次 TaskRun 冻结动作配置 hash，生成单调递增的动作版本。
 
-### 4.5 AgentRuntime
+### 4.5 AgentRuntime 与当前模型
 
 Agent Runtime 只负责：
 
@@ -173,21 +186,23 @@ Agent Runtime 只负责：
 - 启动、超时、取消并清理子进程。
 - 解析统一的运行结果、费用和 usage。
 
-每个 Agent profile 必须声明 `executableRef`，引用当前机器 `executableBindings` 中的 CLI 命令与版本检查规则；不得在共享项目配置中保存某台机器的 CLI 绝对路径。
+`agentProfiles` 是平台内部的“可用模型 → Runtime 配置”注册表，用于把 `execution.currentModelId` 解析为 `runtime`、`model`、`executableRef`、超时和必要运行参数。它不是 Project 的阶段配置，也不要求普通用户维护一组 Profile。
 
-Claude Code、Codex、OpenCode 分别实现适配器。适配器不得预读业务文件、替 Agent 选择仓库或改写阶段工作流。
+每个内部模型配置必须声明 `executableRef`，引用当前机器 `executableBindings` 中的 CLI 命令与版本检查规则；不得在共享配置中保存某台机器的 CLI 绝对路径。
+
+Claude Code、Codex、OpenCode 分别实现 Runtime 适配器。Runtime 是执行通道，不是用户选择层级；Web 中“当前模型”只展示模型语义，不把 `Codex`、`Claude Code`、`OpenCode` 与具体模型混成同一级选项。适配器不得预读业务文件、替 Agent 选择仓库或改写阶段工作流。
 
 ### 4.6 Task、TaskRun 与 StageRun
 
 - `Task`：一个外部 Bug 在 CodeFixer 中的长期记录。
-- `TaskRun`：一次基于冻结工单、策略和代码基线的完整执行。
+- `TaskRun`：一次基于冻结工单、策略、代码基线和当前模型的完整执行。
 - `StageRun`：某个阶段的一次尝试。
 - `DeliveryActionRun`：最终动作的一次执行。
 - `DeliveryTargetRun`：`gitlabMr` 中某个目标分支的子执行。
 
 重试会创建新 attempt 或新 TaskRun，旧产物和证据永久保留。
 
-## 5. 全局执行模式
+## 5. 全局执行设置
 
 ### 5.1 待我开始
 
@@ -240,6 +255,25 @@ Claude Code、Codex、OpenCode 分别实现适配器。适配器不得预读业�
 
 每个 TaskRun 保存 `execution_mode_snapshot`，运行中不受全局开关后续变化影响。
 
+### 5.4 当前模型
+
+全局执行设置必须且只能有一个 `execution.currentModelId`。
+
+用户语义只有一个动作：**选择当前模型**。系统设置直接显示当前值并允许单选切换，不提供“添加模型”“启用 Agent”“为不同阶段选择模型”等二级管理交互。
+
+当 Worker 开始执行一个 TaskRun 时，平台解析当时的 `currentModelId`，得到具体 Runtime、模型 ID 与 CLI binding。本 TaskRun 后续所有 LLM 调用都使用这一解析结果：
+
+- `scope_discovery`
+- `discovery`
+- `no_change_verify`
+- `repair`
+- `review(mode=change)`
+- `review(mode=no_change)`
+
+各阶段必须是独立会话，因此 session、usage、费用、耗时和失败仍按 StageRun 分别记录。运行过程中用户切换全局当前模型，不改变已经开始执行的 TaskRun；新模型从之后开始执行的 TaskRun 生效。
+
+尚未进入执行的任务不需要提前冻结模型，避免长时间排队后仍使用过期的用户选择。
+
 ## 6. 任务流水线
 
 ### 6.1 主流程
@@ -275,19 +309,21 @@ ingest
 | 阶段 | 执行者 | 主要输入 | 主要输出 | 写权限 |
 |---|---|---|---|---|
 | `ingest` | 平台 | 外部工单 | 当前工单记录 | 数据库 |
-| `prepare` | 平台 | 最新工单、项目配置、当前基线 | 冻结快照、入口文档、输入指纹 | 任务产物目录 |
+| `prepare` | 平台 | 最新工单、项目配置、当前基线、当前模型 | 冻结快照、入口文档、输入指纹 | 任务产物目录 |
 | `scope_discovery` | 范围调查 Agent（独立会话） | 范围调查入口路径 | `scope-discovery.md/json` | 范围调查输出目录 |
 | `discovery` | 正式定位 Agent（独立会话） | Discovery 入口路径；其中只引用范围调查产物路径 | `task-discovery.md/json` | Discovery 输出目录 |
 | `assess` | 平台 | Discovery 产物与确定性门禁 | `change_required / no_change_claim / unresolved` | 数据库 |
-| `no_change_verify` | Repair/Verifier Agent | 固定入口路径 | `no-change-report.md/json` | 阶段输出目录 |
+| `no_change_verify` | 独立 Agent 会话 | 固定入口路径 | `no-change-report.md/json` | 阶段输出目录 |
 | `workspace_prepare` | 平台 | 修改源与冻结基线 | 隔离工作区 manifest | 工作区 |
-| `repair` | Repair Agent | Repair 入口路径 | 代码修改、`repair-result.json` | 唯一隔离工作区 |
+| `repair` | Repair Agent（独立会话） | Repair 入口路径 | 代码修改、`repair-result.json` | 唯一隔离工作区 |
 | `verify` | 平台命令执行器 | 候选修改快照、验证配置 | `verification.md/json` | 验证临时目录 |
-| `review` | 独立 Agent 会话 | 候选修改或 no-change 报告 | `review.md/json` | Review 输出目录 |
+| `review` | Review Agent（独立会话） | 候选修改或 no-change 报告 | `review.md/json` | Review 输出目录 |
 | `pre_delivery_check` | 平台 | 最新工单、修改源基线、动作目标 | 稳定性检查或新一轮尝试 | 数据库与阶段目录 |
 | `freeze_change` | 平台 | 已验证工作区 | 不可变 diff、commit、checksum | 冻结目录 |
 | `deliver` | 平台动作执行器 | 冻结修改与动作配置快照 | Patch/MR 结果 | 配置的外部目标 |
 | `finalize` | 平台 | 全部阶段和动作结果 | 任务终态、索引、清理结果 | 数据库与产物目录 |
+
+所有标注为 Agent 的阶段都使用同一个 TaskRun 当前模型快照；“范围调查 / 正式定位 / Repair / Review”描述的是阶段职责，不是不同模型配置。
 
 ### 6.3 双 Agent 反查：范围调查与正式定位
 
@@ -296,9 +332,9 @@ ingest
 1. `scope_discovery` 负责快速识别大致模块、候选路径与检索入口，只产出定位线索。
 2. `discovery` 负责正式定位。它完整读取固定路径的范围调查文档，再从当前冻结基线重新读取源码、核实线索并形成证据链。
 
-两个会话可以使用相同或不同的 Agent profile，但必须分别启动、分别记录模型用量和失败原因。第一阶段产物是不可信的调查笔记，不是代码事实、正式证据或对第二阶段的指令；第二阶段不能仅凭笔记下结论。
+两个会话必须分别启动、分别记录 session、模型用量、费用和失败原因，但**统一使用 TaskRun 已解析的当前模型**。第一阶段产物是不可信的调查笔记，不是代码事实、正式证据或对第二阶段的指令；第二阶段不能仅凭笔记下结论。
 
-项目配置中的角色键固定为 `agents.scopeDiscovery`、`agents.discovery`、`agents.repair`、`agents.review`，四项都必须显式配置。平台不为缺失的 `scopeDiscovery` 回退复用旧配置；同一 profile 的复用必须由项目配置明确表达。
+Project 中不再存在 `agents.scopeDiscovery`、`agents.discovery`、`agents.repair`、`agents.review` 之类的阶段模型角色键。平台不得因阶段不同而静默换模型；如果未来需要实验性多模型策略，必须作为新的明确产品能力重新设计，不能借旧 Profile 字段回流。
 
 平台不得把第一阶段正文拼进第二阶段 Prompt。第二阶段入口文档只写范围调查产物的绝对路径及其信任边界，Runtime 仍只收到入口文档绝对路径和最小启动指令。范围调查失败时任务以 `scope_discovery_failed` 结束；正式定位无法反查时以 `discovery_unresolved` 结束，界面展示阶段、原因、已核实线索和建议动作。
 
@@ -496,7 +532,7 @@ Agent 的 stdin 或命令参数中不得再次拼接工单正文、源码正文�
 - `skipped`
 - `canceled`
 
-StageRun 同时保存 `attempt`、开始/结束时间、输入指纹、Runner、模型、费用、输出路径和失败对象。
+StageRun 同时保存 `attempt`、开始/结束时间、输入指纹、Runner、实际模型、费用、输出路径和失败对象。即使同一 TaskRun 的 LLM 阶段模型相同，也必须逐阶段保存实际执行事实，便于审计 Runtime 是否按规范执行。
 
 ### 8.4 结构化失败
 
@@ -684,7 +720,7 @@ verification:
 
 ### 11.2 Review
 
-Review 使用统一的 `review` stage、独立 Agent 会话和只读权限。`mode=change` 检查候选修改，`mode=no_change` 检查无修改报告。两种模式使用同一个 Review profile、目录协议和状态模型。
+Review 使用统一的 `review` stage、独立 Agent 会话和只读权限。`mode=change` 检查候选修改，`mode=no_change` 检查无修改报告。两种模式使用同一个 TaskRun 当前模型、目录协议和状态模型；Review 的“独立”指会话与职责独立，不指单独选择另一模型。
 
 Review 检查：
 
@@ -896,7 +932,7 @@ cherry-pick-<最新commit前8位>-100
 ### 14.3 人工重试
 
 - 输入指纹不变时，可从安全检查点续跑。
-- 工单、策略、修改源基线或最终动作配置变化时，必须创建新 TaskRun 并从 `prepare` 开始。
+- 工单、策略、修改源基线、当前模型或最终动作配置变化时，必须创建新 TaskRun 并从 `prepare` 开始。
 - Delivery 部分失败默认只重试失败动作/目标。
 - 已成功动作不重复。
 - 用户想为已关闭的成功 MR 再创建一个 MR，属于“重新交付”，必须创建新的动作版本。
@@ -925,7 +961,7 @@ Delivery-only 重试沿用原 TaskRun 和 `change_version`，创建新的 delive
 | 工单 | Redmine、TAPD |
 | 修改源 | Git、SVN |
 | 知识源 | 无、HTTP 知识服务 |
-| Agent | Claude Code、Codex、OpenCode |
+| Agent Runtime | Claude Code、Codex、OpenCode |
 | 验证 | 受控本地命令 |
 | 最终动作 | Patch、GitLab MR |
 
@@ -936,14 +972,14 @@ Delivery-only 重试沿用原 TaskRun 和 `change_version`，创建新的 delive
 Prompt plan 冻结：
 
 - stage ID。
-- Agent profile 和实际模型。
+- TaskRun 当前模型 ID、解析后的实际模型与 Runtime。
 - 入口文档路径。
 - 工作目录。
 - 权限清单。
 - 输出路径与 Schema。
 - 超时和预算。
 
-不同 Runner 只转换 CLI 细节，不能修改业务输入或阶段职责。
+不同 Runner 只转换 CLI 细节，不能修改业务输入、阶段职责或替换 TaskRun 已冻结的模型。
 
 ## 16. 配置体系
 
@@ -971,6 +1007,7 @@ storage:
 
 execution:
   mode: awaitingStart
+  currentModelId: claude-sonnet
   maxConcurrentTasks: 3
   maxRepairAttempts: 3
 
@@ -1019,7 +1056,9 @@ projects: []
 
 `pathBindings` 的相对路径统一相对 `storage.dataRoot` 解析。ModificationSource 使用 `repositoryRef`，最终动作使用各自的目录引用；管理员可以在不入 Git 的本地覆盖中为当前机器设置绝对路径。可共享项目与最终动作只保存引用 ID。删除或修改引用前必须检查使用者，解析失败时配置不得进入 ready 状态。
 
-`executableBindings` 是所有外部可执行程序的机器注册表。每项包含命令参数数组、版本查询参数和可选版本约束；`command` 可以是部署用户 `PATH` 中的命令名，也可以只在本地覆盖中设置为当前机器绝对路径。Git/SVN 适配器、Agent profile 与验证命令通过 `executableRef` 引用它，平台不自行猜测参考工程里的安装位置。启用 Claude Code、Codex 或 OpenCode 时，必须存在对应 CLI binding。
+`executableBindings` 是所有外部可执行程序的机器注册表。每项包含命令参数数组、版本查询参数和可选版本约束；`command` 可以是部署用户 `PATH` 中的命令名，也可以只在本地覆盖中设置为当前机器绝对路径。Git/SVN 适配器、内部模型配置与验证命令通过 `executableRef` 引用它，平台不自行猜测参考工程里的安装位置。当前模型所需的 Claude Code、Codex 或 OpenCode Runtime 必须存在对应 CLI binding。
+
+`agentProfiles` 在第一版保留为内部模型/Runtime 注册结构，用于兼容适配器配置和解析 `currentModelId`。它不是 Project 的可配置角色表，Web 默认不提供 Profile CRUD；用户只操作 `execution.currentModelId`。
 
 版本检查使用以下确定性协议：
 
@@ -1036,19 +1075,27 @@ projects: []
 - `automatic`
 - `awaitingStart`
 
+`execution.currentModelId`：
+
+- 必须指向一个有效的内部模型配置。
+- 全局只能有一个当前值。
+- Project 不允许覆盖。
+- 所有 LLM 阶段统一消费该值解析出的模型。
+- Web 只提供当前模型单选，不暴露阶段 Profile 管理。
+
 ### 16.3 配置快照
 
-每次 TaskRun 在 `prepare` 冻结：
+每次 TaskRun 开始执行时冻结：
 
 - 有效项目配置。
-- Agent profiles。
+- 全局当前模型：`currentModelId`、实际模型 ID、Runtime、`executableRef` 和影响调用语义的运行参数。
 - 修改源。
 - 验证命令。
 - 最终动作。
 - 连接引用的非秘密元数据。
 - 配置版本/hash。
 
-运行中热重载只影响后续 TaskRun。
+运行中热重载只影响后续开始执行的 TaskRun。Project 配置快照中不得重新出现阶段 Agent/模型字段。
 
 ### 16.4 依赖检查与 Readiness
 
@@ -1065,20 +1112,21 @@ CodeFixer 的 Python 运行时基线固定为 **64 位 CPython 3.12+**。Bootstr
 - `storage.dataRoot` 的解析基准稳定，数据根目录、Artifact、Workspace、日志和所有 `pathBindings` 可创建、可写且剩余空间高于阈值。
 - 正式进程能够绑定 `9522`，生产模式下前端构建产物存在。
 - 当前操作系统支持所选进程隔离与取消方式。
-- 已启用的 Git、SVN 和 Agent CLI 均有 `executableBindings`，可发现、版本满足约束，且在部署用户下具备非交互认证能力。
+- `execution.currentModelId` 可解析为有效模型配置，其 Runtime CLI 存在、版本满足约束，并在部署用户下具备非交互认证能力。
+- 已启用的 Git、SVN 和其他必需 CLI 均有 `executableBindings`，可发现且版本满足约束。
 - 必需的外部服务可以解析和连接；检查结果只报告凭据是否可用，不输出凭据内容。
 
 项目 Preflight 至少覆盖：
 
 - TicketProvider 可连接、增量游标能力与筛选字段有效。
 - 唯一 ModificationSource 的 `repositoryRef` 与 `executableRef` 可解析，仓库类型和 CLI 类型匹配，基线可读取，隔离工作区可创建。
-- Agent profile 的 `executableRef` 可解析，模型、预算、入口模板和输出 Schema 都存在。
+- 全局当前模型及其 Runtime 可用；Project 不检查 `scopeDiscovery/discovery/repair/review` 等阶段 Profile 字段。
 - 验证命令的可执行文件、参数、工作目录和超时有效。
 - Patch 的目录引用可解析且目标目录可写。
 - GitLab connection、项目、assignee、目标分支、API 权限和 commit 物化仓库均有效。
 - 允许修改路径、路径映射和最终动作 ID 不冲突。
 
-每个检查返回稳定的 check ID、`ready|warning|failed`、用户可读原因和修复建议。必需依赖失败时项目为 `not_ready`：全自动调度不领取该项目的新任务，手工开始按钮禁用；运行前状态变化则 TaskRun 以 `configuration_not_ready` 失败并保留检查证据。可选知识源不可用只产生 warning，并在任务档案中明确标注降级，不冒充查询成功。
+每个检查返回稳定的 check ID、`ready|warning|failed`、用户可读原因和修复建议。当前模型检查使用稳定的全局语义，例如 `agent.current` / `agent.current.executable`，不得重新按阶段生成四套 Agent readiness。必需依赖失败时项目为 `not_ready`：全自动调度不领取该项目的新任务，手工开始按钮禁用；运行前状态变化则 TaskRun 以 `configuration_not_ready` 失败并保留检查证据。可选知识源不可用只产生 warning，并在任务档案中明确标注降级，不冒充查询成功。
 
 ## 17. 持久化模型
 
@@ -1121,6 +1169,7 @@ GET    /api/health
 GET    /api/readiness
 
 GET    /api/settings
+PUT    /api/settings
 PUT    /api/settings/execution-mode
 
 GET    /api/projects
@@ -1147,7 +1196,7 @@ GET    /api/events
 WS     /api/ws
 ```
 
-所有写接口使用版本号或 ETag 防止覆盖并发修改。Secret 字段只返回 `configured: true/false`。
+所有写接口使用版本号或 ETag 防止覆盖并发修改。Secret 字段只返回 `configured: true/false`。当前模型属于全局 settings，通过设置写接口更新，不创建 Project 级模型 API。
 
 ## 19. Web 管理界面
 
@@ -1166,13 +1215,15 @@ WS     /api/ws
 
 ### 19.2 导航
 
-- 控制台
+第一版主导航保持轻量：
+
+- 首页 / 控制台
 - 任务
 - 项目
 - 工单来源
-- Agent 与知识源
-- 最终动作
-- 系统设置
+- 设置
+
+Agent Runtime、CLI binding、知识源等机器级或高级能力不单独膨胀成日常主导航；需要时进入设置或高级配置。
 
 ### 19.3 控制台
 
@@ -1236,6 +1287,25 @@ WS     /api/ws
 - 建议先修什么。
 
 `no_change` 页面必须展示正向证据，不能只显示“没有发现问题”。
+
+### 19.6 系统设置与当前模型
+
+模型选择必须是轻量的全局单选控件：
+
+```text
+当前模型  [ Claude Sonnet ▼ ]
+```
+
+交互约束：
+
+- 页面直接展示当前模型，不要求先进入“模型管理”弹窗。
+- 用户选择另一个模型后保存为新的 `execution.currentModelId`。
+- 不出现“添加模型”“已添加”“启用 Claude Code/Codex/OpenCode”等 Runtime 管理语义。
+- 不在 Project 编辑器中出现 Scope、Discovery、Repair、Review 四个模型下拉框。
+- Runtime、CLI 命令、超时等属于系统实现/高级环境配置，默认不与模型选择混排。
+- 可在模型旁显示简短能力定位和当前 Runtime 健康状态，但不堆叠价格、上下文窗、参数等非必要信息。
+
+模型列表中的一等实体必须是模型，而不是 Runtime。具体模型映射到 Claude Code、Codex 或 OpenCode 的方式由平台内部模型注册表负责。
 
 ## 20. 安全边界
 
@@ -1311,8 +1381,9 @@ Windows 开发与测试
 
 - 使用了哪个工单 snapshot。
 - 使用了哪个项目配置版本。
+- 使用了哪个全局当前模型快照，以及解析到哪个 Runtime/实际模型。
 - 基于哪个代码 revision/SHA。
-- 每阶段由哪个 Runner/模型执行。
+- 每阶段实际由哪个 Runner/模型执行，并验证与 TaskRun 当前模型快照一致。
 - Agent 实际耗时、费用和退出原因。
 - 修改了哪些文件。
 - 运行了哪些验证命令。
@@ -1344,6 +1415,7 @@ Windows 开发与测试
 - 动态第三方插件市场。
 - 分布式多节点 Worker。
 - 让 Agent 自己持有平台 Token 或决定最终目标分支。
+- Project/阶段级多模型编排或自动模型路由。
 - SVN 直接 commit。
 
 这些能力以后可通过现有接口扩展，但第一版不为它们预写无实现的 UI 或状态。
@@ -1354,10 +1426,11 @@ Windows 开发与测试
 
 - FastAPI、SQLite migration、React/Vite。
 - 默认配置、本地覆盖、Secret 引用。
-- 项目、Provider、Agent、最终动作管理和 Preflight。
+- 项目、Provider、当前模型、最终动作管理和 Preflight。
+- 内部模型 Runtime 注册与 CLI binding。
 - Linux systemd 与健康检查。
 
-验收：Windows/Linux 均可启动，配置保存不污染 Git，Secret 不回传。
+验收：Windows/Linux 均可启动，配置保存不污染 Git，Secret 不回传；用户只需选择一个当前模型。
 
 ### 阶段二：收单与任务控制
 
@@ -1372,11 +1445,11 @@ Windows 开发与测试
 ### 阶段三：双 Agent 与无修改分支
 
 - 固定路径 Artifact 协议。
-- Discovery、门禁、Repair。
+- Scope Discovery、正式 Discovery、门禁、Repair。
 - `no_change` 验证与独立 Review。
 - Runner 统一协议。
 
-验收：定位失败明确失败；已修复 Bug 能以证据健康完成；Agent 命令不包含拼接正文。
+验收：定位失败明确失败；已修复 Bug 能以证据健康完成；Agent 命令不包含拼接正文；所有 LLM 阶段使用同一 TaskRun 当前模型但保持独立会话。
 
 ### 阶段四：修改、验证与 Review
 
@@ -1427,6 +1500,8 @@ Windows 开发与测试
 15. Web 能清楚展示阶段、尝试、失败、无修改证据、部分交付和外部副作用。
 16. Web 与 API 的公开默认和正式部署端口统一为 `9522`。
 17. 仓库无需任何本机参考项目或参考脚本即可构建、部署和理解；所有必需依赖都有机器可读声明及 Readiness/Preflight 结果。
+18. 全局只有一个当前模型；Project 与各 LLM 阶段没有独立模型选择；同一 TaskRun 的所有 LLM 阶段使用同一模型且保持独立会话。
+19. 模型选择 UI 只呈现模型，不把 Agent Runtime 当作同级模型选项，也不要求用户管理 Profile。
 
 ## 26. 规范标识与关键定义
 
@@ -1441,6 +1516,7 @@ Windows 开发与测试
 
 ```text
 prepare
+scope_discovery
 discovery
 assess
 no_change_verify
@@ -1454,11 +1530,13 @@ deliver
 finalize
 ```
 
-### 26.2 TaskRun 创建时点
+### 26.2 TaskRun 创建时点与当前模型生效时点
 
 - 待我开始模式：用户点击开始时创建 TaskRun，并立即冻结 `execution_mode_snapshot`，状态为 `queued`。
 - 全自动模式：工单通过唯一项目路由后立即创建 TaskRun，状态为 `queued`。
-- TaskRun 被 Worker 领取后才执行 `prepare`；`prepare` 获取当时最新工单和代码基线，因此排队时长不会冻结旧代码。
+- TaskRun 被 Worker 领取后才执行 `prepare`；`prepare` 获取当时最新工单、代码基线并解析当时的 `execution.currentModelId`。
+- 当前模型一旦为该 TaskRun 解析完成，本次运行后续所有 LLM 阶段固定使用该模型；运行中全局切换不影响它。
+- queued 但尚未开始执行的 TaskRun 不提前冻结模型，因此用户切换当前模型后，这些后续开始执行的 Run 使用新模型。
 - 同一个 Task 同时最多存在一个 `queued` 或 `running` TaskRun。
 
 ### 26.3 输入指纹
@@ -1469,10 +1547,10 @@ finalize
 - 项目有效配置 hash。
 - ModificationSource ID 与基线 revision/SHA。
 - 阶段协议版本。
-- Agent profile、Runner 和实际模型。
+- TaskRun 当前模型快照：`currentModelId`、实际模型、Runtime 和影响调用语义的参数。
 - 前序必需 Artifact 的 hash。
 
-某项变化会使依赖它的安全检查点失效。
+某项变化会使依赖它的安全检查点失效。Project 不再通过阶段 Agent Profile 参与指纹；模型变化通过全局当前模型快照进入指纹。
 
 ### 26.4 安全检查点
 
@@ -1917,14 +1995,14 @@ codefixer/materialize/<task-run-id>/<change-version>/<action-id>/<action-version
 
 ## 30. 分阶段文件与权限矩阵
 
-| 阶段 | Agent profile | 必须自行读取 | 可访问代码 | 写入范围 |
+| 阶段 | 模型 / 会话 | 必须自行读取 | 可访问代码 | 写入范围 |
 |---|---|---|---|---|
-| `scope_discovery` | scope discovery profile | ticket、project policy、source manifest、附件清单 | 唯一修改源只读视图、受控知识工具 | scope-discovery 输出目录 |
-| `discovery` | discovery profile | ticket、project policy、source manifest、附件清单、scope-discovery 产物 | 唯一修改源只读视图、受控知识工具 | discovery 输出目录 |
-| `no_change_verify` | repair profile 的只读模式 | ticket、Discovery、source manifest | 唯一修改源只读视图、验证工具 | no-change 输出目录 |
-| `repair` | repair profile | ticket、Discovery、project policy、workspace manifest、上轮反馈 | 唯一隔离工作区 | 隔离工作区与 repair 输出目录 |
-| `review(mode=change)` | review profile | ticket、Discovery、候选 diff、verification | 候选工作区只读视图 | review 输出目录 |
-| `review(mode=no_change)` | review profile | ticket、Discovery、no-change report、证据索引 | 唯一修改源只读视图 | review 输出目录 |
+| `scope_discovery` | TaskRun 当前模型 · 独立会话 | ticket、project policy、source manifest、附件清单 | 唯一修改源只读视图、受控知识工具 | scope-discovery 输出目录 |
+| `discovery` | TaskRun 当前模型 · 独立会话 | ticket、project policy、source manifest、附件清单、scope-discovery 产物 | 唯一修改源只读视图、受控知识工具 | discovery 输出目录 |
+| `no_change_verify` | TaskRun 当前模型 · 独立只读会话 | ticket、Discovery、source manifest | 唯一修改源只读视图、验证工具 | no-change 输出目录 |
+| `repair` | TaskRun 当前模型 · 独立写会话 | ticket、Discovery、project policy、workspace manifest、上轮反馈 | 唯一隔离工作区 | 隔离工作区与 repair 输出目录 |
+| `review(mode=change)` | TaskRun 当前模型 · 独立只读会话 | ticket、Discovery、候选 diff、verification | 候选工作区只读视图 | review 输出目录 |
+| `review(mode=no_change)` | TaskRun 当前模型 · 独立只读会话 | ticket、Discovery、no-change report、证据索引 | 唯一修改源只读视图 | review 输出目录 |
 
 附件正文不拼入 Prompt。平台先把允许的附件冻结到 snapshot 目录，入口文件列出路径、类型、大小和 hash，由 Agent 按需读取。
 
