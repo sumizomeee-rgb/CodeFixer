@@ -150,10 +150,6 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(workspace, dict):
         raise ValueError("必须配置修改工作区")
     location_type = str(workspace.get("locationType") or "").strip()
-    legacy_path = str(workspace.get("path") or "").strip()
-    if not location_type and legacy_path:
-        location_type = "local"
-        workspace["localPath"] = legacy_path
     if location_type == "local":
         local_path = _direct_path(workspace.get("localPath"))
         if local_path is None:
