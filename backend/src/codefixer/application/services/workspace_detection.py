@@ -105,19 +105,26 @@ def _probe_gitlab_web_base(host: str) -> str | None:
         return "https://gitlab.com"
     for scheme in ("https", "http"):
         base = f"{scheme}://{host}"
-        try:
-            response = httpx.get(
-                f"{base}/-/health",
-                timeout=2.5,
-                follow_redirects=True,
-                verify=False,
-                headers={"User-Agent": "CodeFixer/1.0"},
+        for path in ("/-/health", "/users/sign_in"):
+            try:
+                response = httpx.get(
+                    f"{base}{path}",
+                    timeout=2.5,
+                    follow_redirects=True,
+                    verify=False,
+                    headers={"User-Agent": "CodeFixer/1.0"},
+                )
+            except httpx.HTTPError:
+                continue
+            body = response.text.lower()
+            is_gitlab = response.status_code == 200 and (
+                'property="og:site_name"' in body and 'content="gitlab"' in body
+                or "<title>" in body and "gitlab</title>" in body
+                or path == "/-/health" and "gitlab" in body
             )
-        except httpx.HTTPError:
-            continue
-        if response.status_code == 200 and "GitLab" in response.text:
-            final = response.url.copy_with(path="", query=None, fragment=None)
-            return str(final).rstrip("/")
+            if is_gitlab:
+                final = response.url.copy_with(path="", query=None, fragment=None)
+                return str(final).rstrip("/")
     return None
 
 

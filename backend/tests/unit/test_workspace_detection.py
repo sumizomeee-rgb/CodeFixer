@@ -151,6 +151,23 @@ def test_remote_url__never_exposes_embedded_credentials():
     assert sanitize_remote_url("https://oauth2:secret@gitlab.com/company/project.git?token=secret") == "https://gitlab.com/company/project.git"
 
 
+def test_probe_gitlab_web_base__falls_back_to_self_hosted_sign_in_page(monkeypatch):
+    def fake_get(url: str, **kwargs):
+        del kwargs
+        request = workspace_detection.httpx.Request("GET", url)
+        if url.endswith("/-/health"):
+            return workspace_detection.httpx.Response(404, text="Not Found", request=request)
+        return workspace_detection.httpx.Response(
+            200,
+            text='<meta content="GitLab" property="og:site_name"><title>Sign in · GitLab</title>',
+            request=request,
+        )
+
+    monkeypatch.setattr(workspace_detection.httpx, "get", fake_get)
+
+    assert workspace_detection._probe_gitlab_web_base("git.company.test") == "https://git.company.test"
+
+
 @pytest.mark.skipif(shutil.which("svn") is None or shutil.which("svnadmin") is None, reason="SVN CLI 不可用")
 def test_detect_svn_workspace(tmp_path: Path):
     remote = tmp_path / "remote"

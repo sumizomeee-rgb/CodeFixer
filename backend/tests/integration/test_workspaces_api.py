@@ -62,6 +62,7 @@ def test_detect_and_browse_workspace(tmp_path: Path, monkeypatch):
             "hostingKind": "github",
             "repositoryRoot": str(repository.resolve()),
             "remoteUrl": "git@github.com:company/project.git",
+            "webBaseUrl": "https://github.com",
             "summary": "已识别为 GitHub Git 工作区",
             "checks": detected.json()["checks"],
         }

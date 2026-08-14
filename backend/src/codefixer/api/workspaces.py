@@ -40,6 +40,7 @@ class WorkspaceDetectionResponse(BaseModel):
     hostingKind: Literal["gitlab", "github", "other", "none", "ambiguous"]
     repositoryRoot: str | None = None
     remoteUrl: str | None = None
+    webBaseUrl: str | None = None
     summary: str
     checks: list[WorkspaceCheckResponse]
     path: str | None = None
