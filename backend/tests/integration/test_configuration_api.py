@@ -37,13 +37,17 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert changed.json()["mode"] == "automatic"
         etag = changed.json()["etag"]
         repository = repo
-        project = {"id": "demo", "name": "Demo", "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"path": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "branchLabel": "main", "versionSource": "fixed", "versionFallback": "v1", "submitterName": "Tester"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
+        project = {"id": "demo", "name": "Demo", "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"path": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "submitterName": "Tester"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
         created = client.post("/api/projects", json=project, headers={"If-Match": etag})
         assert created.status_code == 201
+        project_id = created.json()["project"]["id"]
+        assert project_id.startswith("pipeline-")
+        assert project_id != "demo"
+        assert created.json()["project"]["intakeStartedAt"]
         assert created.json()["project"]["modificationWorkspace"]["vcsKind"] == "git"
         assert created.json()["project"]["modificationWorkspace"]["hostingKind"] == "other"
-        assert client.get("/api/projects").json()["items"][0]["id"] == "demo"
-        preflight = client.post("/api/projects/demo/preflight")
+        assert client.get("/api/projects").json()["items"][0]["id"] == project_id
+        preflight = client.post(f"/api/projects/{project_id}/preflight")
         assert preflight.status_code == 200
         assert preflight.json()["ready"] is True
         check_ids = {item["id"] for item in preflight.json()["checks"]}
@@ -56,6 +60,6 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert "token-value" not in json.dumps(public)
 
         incompatible = {**project, "finalActions": [{"id": "push", "type": "gitlabPush"}]}
-        rejected = client.put("/api/projects/demo", json=incompatible, headers={"If-Match": created.json()["etag"]})
+        rejected = client.put(f"/api/projects/{project_id}", json=incompatible, headers={"If-Match": created.json()["etag"]})
         assert rejected.status_code == 422
         assert "不支持 gitlabPush" in rejected.json()["error"]["message"]

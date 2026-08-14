@@ -89,16 +89,17 @@
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "name": {"type": "string", "minLength": 1},
+        "intakeStartedAt": {"type": "string", "format": "date-time"},
         "localizationSource": {"$ref": "#/$defs/localizationSource"},
         "modificationWorkspace": {"$ref": "#/$defs/modificationWorkspace"},
         "deliveryLog": {
           "type": "object",
-          "required": ["technologyTag", "branchLabel", "versionSource", "versionFallback", "submitterName"],
+          "required": ["technologyTag", "submitterName"],
           "properties": {
             "technologyTag": {"type": "string", "minLength": 1},
-            "branchLabel": {"type": "string", "minLength": 1},
-            "versionSource": {"enum": ["fixed", "ticketFixVersion"]},
-            "versionFallback": {"type": "string", "minLength": 1},
+            "branchLabel": {"type": "string", "minLength": 1, "deprecated": true},
+            "versionSource": {"enum": ["fixed", "ticketFixVersion"], "deprecated": true},
+            "versionFallback": {"type": "string", "minLength": 1, "deprecated": true},
             "submitterName": {"type": "string", "minLength": 1}
           },
           "additionalProperties": false

@@ -61,7 +61,7 @@ def _context(tmp_path: Path) -> FrozenDeliveryContext:
         patch_sha256=hashlib.sha256(patch_path.read_bytes()).hexdigest(),
         manifest_path=manifest_path,
         delivery_metadata_path=metadata_path,
-        commit_subject="fix：【Code】【#1】【默认】【v1】模块 - 修复  提交人：测试",
+        commit_subject="fix：【Code】【#1】【v1】模块 - 修复  提交人：测试",
         patch_filename="fix-1.patch",
         ticket_key="1",
     )

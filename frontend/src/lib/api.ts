@@ -17,7 +17,6 @@ export const api={
   preflight:(projectId:string)=>request<PreflightResult>(`/api/projects/${encodeURIComponent(projectId)}/preflight`,{method:'POST'}),
   providers:()=>request<{items:Array<Record<string,unknown>&{id?:string;type?:string;enabled?:boolean}>}>('/api/providers'),
   testProvider:(id:string)=>request<Record<string,unknown>>(`/api/providers/${encodeURIComponent(id)}/test`,{method:'POST'}),
-  pollProvider:(id:string)=>request<Record<string,unknown>>(`/api/providers/${encodeURIComponent(id)}/poll`,{method:'POST'}),
   tasks:()=>request<{items:TaskRecord[]}>('/api/tasks'),
   task:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}`),
   startTask:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}/start`,{method:'POST'}),

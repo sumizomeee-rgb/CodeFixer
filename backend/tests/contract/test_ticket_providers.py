@@ -16,7 +16,7 @@ def test_redmine_provider__freezes_full_issue_and_uses_incremental_filter():
         if request.url.path == "/issue_statuses.json":
             return httpx.Response(200, json={"issue_statuses": [{"id": 1, "name": "New", "is_closed": False}]})
         if request.url.path == "/issues/7.json":
-            return httpx.Response(200, json={"issue": {"id": 7, "subject": "A", "description": "detail", "updated_on": "2026-08-12T00:00:00Z", "status": {"id": 1, "name": "New"}, "journals": [{"id": 2, "notes": "comment"}], "attachments": [{"id": 3, "filename": "a.log"}], "relations": [{"id": 4}], "changesets": [{"revision": "abc"}]}})
+            return httpx.Response(200, json={"issue": {"id": 7, "subject": "A", "description": "detail", "created_on": "2026-08-10T00:00:00Z", "updated_on": "2026-08-12T00:00:00Z", "status": {"id": 1, "name": "New"}, "journals": [{"id": 2, "notes": "comment"}], "attachments": [{"id": 3, "filename": "a.log"}], "relations": [{"id": 4}], "changesets": [{"revision": "abc"}]}})
         raise AssertionError(request.url)
 
     client = httpx.Client(base_url="https://redmine.example", transport=httpx.MockTransport(handler), headers={"X-Redmine-API-Key": "key-value"})
@@ -26,6 +26,7 @@ def test_redmine_provider__freezes_full_issue_and_uses_incremental_filter():
     assert len(batch.tickets) == 1
     ticket = batch.tickets[0]
     assert ticket.eligible is True
+    assert ticket.payload["createdAt"] == "2026-08-10T00:00:00Z"
     assert ticket.payload["comments"] == [{"id": 2, "notes": "comment"}]
     list_request = next(request for request in seen if request.url.path == "/issues.json")
     assert list_request.url.params["updated_on"] == ">=2026-08-11T00:00:00Z"
@@ -37,7 +38,7 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
     def handler(request: httpx.Request) -> httpx.Response:
         paths.append(request.url.path)
         if request.url.path == "/bugs":
-            return httpx.Response(200, json={"status": 1, "data": [{"Bug": {"id": "1010000000000000001", "title": "B", "description": "detail", "status": "in_progress", "module": "商城", "modified": "2026-08-12 01:00:00", "closed": None}}]})
+            return httpx.Response(200, json={"status": 1, "data": [{"Bug": {"id": "1010000000000000001", "title": "B", "description": "detail", "status": "in_progress", "module": "商城", "created": "2026-08-10 01:00:00", "modified": "2026-08-12 01:00:00", "closed": None}}]})
         if request.url.path == "/comments":
             return httpx.Response(200, json={"status": 1, "data": [{"Comment": {"id": "c1", "description": "note"}}]})
         if request.url.path == "/attachments":
@@ -53,6 +54,7 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
     batch = provider.poll("2026-08-11 00:00:00")
     assert batch.next_cursor == "2026-08-12 01:00:00"
     ticket = batch.tickets[0]
+    assert ticket.payload["createdAt"] == "2026-08-10 01:00:00"
     assert ticket.payload["module"] == "商城"
     assert ticket.payload["comments"] == [{"id": "c1", "description": "note"}]
     assert ticket.payload["attachments"] == [{"id": "a1", "filename": "x.png"}]

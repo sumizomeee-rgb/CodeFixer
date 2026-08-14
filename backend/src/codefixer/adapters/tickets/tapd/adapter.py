@@ -129,6 +129,7 @@ class TapdTicketProvider:
                 "workspaceId": self.workspace_id,
                 "url": f"https://www.tapd.cn/{self.workspace_id}/bugtrace/bugs/view/{bug_id}",
                 "title": str(bug.get("title", "")),
+                "createdAt": bug.get("created"),
                 "description": bug.get("description"),
                 "module": bug.get("module"),
                 "status": bug.get("status"),

@@ -50,9 +50,6 @@ def test_server_config_contract__accepts_new_project_sources_and_actions():
             },
             "deliveryLog": {
                 "technologyTag": "Python",
-                "branchLabel": "主干",
-                "versionSource": "ticketFixVersion",
-                "versionFallback": "v1.0",
                 "submitterName": "Tester",
             },
             "finalActions": [

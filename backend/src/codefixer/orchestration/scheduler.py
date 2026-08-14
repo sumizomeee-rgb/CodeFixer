@@ -65,7 +65,7 @@ class Scheduler:
                 await asyncio.to_thread(self._poll_provider, dict(provider))
             except Exception:
                 # A broken ticket source must not starve other providers or already-queued repairs.
-                # Manual provider test/poll endpoints expose the concrete provider error to admins.
+                # 管理员仍可通过“测试连接”看到反馈源的具体连接错误。
                 continue
 
         configured_limit = getattr(

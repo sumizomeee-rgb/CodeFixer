@@ -14,6 +14,7 @@ test.beforeEach(async ({ page }) => {
     if (path === '/api/readiness') return route.fulfill({ json: fixture.readiness })
     if (path === '/api/projects') return route.fulfill({ json: {items:fixture.projects,etag:fixture.settings.etag} })
     if (path === '/api/providers') return route.fulfill({ json: {items:fixture.providers} })
+    if (/^\/api\/providers\/[^/]+\/test$/.test(path)) return route.fulfill({ json: {ready:true} })
     if (path === '/api/tasks') return route.fulfill({ json: {items:tasks} })
     if (path === '/api/dashboard') return route.fulfill({ json: {
       metrics:{active:1,queued:0,running:1,completedChanged:0,completedNoChange:1,failed:1},
@@ -50,6 +51,13 @@ test('control tower surfaces real task facts and configuration tools', async ({ 
 
   await page.getByRole('button', { name: '反馈源', exact: true }).click()
   await expect(page.getByRole('heading', { name: '反馈源', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '立即收单' })).toHaveCount(0)
+  const tapdProvider = page.locator('.provider-channel').filter({ hasText: 'Haru TAPD' })
+  await expect(tapdProvider.getByRole('button', { name: '测试连接' })).toBeVisible()
+  await tapdProvider.getByRole('button', { name: '编辑' }).click()
+  await page.getByRole('button', { name: '保存更改' }).click()
+  await expect(tapdProvider.getByText('连接正常')).toBeVisible()
+  await expect(page.getByText('反馈源配置已更新，连接正常')).toBeVisible()
   await page.getByRole('button', { name: '添加反馈源' }).click()
   await expect(page.getByRole('heading', { name: '添加反馈源' })).toBeVisible()
   await page.getByRole('button', { name: '取消' }).click()
@@ -59,7 +67,13 @@ test('control tower surfaces real task facts and configuration tools', async ({ 
   await page.getByRole('button', { name: '新增流水线' }).click()
   await expect(page.getByRole('heading', { name: '新增流水线' })).toBeVisible()
   await expect(page.getByText('01')).toBeVisible()
-  await expect(page.getByRole('button', { name: /最终交付/ })).toBeVisible()
+  await expect(page.getByLabel('流水线 ID')).toHaveCount(0)
+  await page.getByRole('button', { name: /最终交付/ }).click()
+  await expect(page.getByLabel('技术域')).toBeVisible()
+  await expect(page.getByLabel('分支标签')).toHaveCount(0)
+  await expect(page.getByLabel('版本来源')).toHaveCount(0)
+  await expect(page.getByLabel('版本 / 兜底')).toHaveCount(0)
+  await expect(page.getByText('fix：【Lua】【#B1250062】AI 模块名 - AI 修改摘要')).toBeVisible()
   await page.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '设置', exact: true }).click()

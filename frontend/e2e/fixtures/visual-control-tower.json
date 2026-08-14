@@ -31,7 +31,7 @@
           "routingRules": [{ "id": "primary-route", "providerRef": "Haru TAPD", "priority": 100, "catchAll": true, "conditions": [] }],
           "localizationSource": { "id": "localization-source", "type": "directory", "path": "E:\\Knowledge\\Client", "readOnly": true },
           "modificationWorkspace": { "id": "modification-workspace", "path": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "repositoryRoot": "E:\\Repos\\Client", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
-          "deliveryLog": { "technologyTag": "Lua", "branchLabel": "主干", "versionSource": "ticketFixVersion", "versionFallback": "v4.7", "submitterName": "黄永熙" },
+          "deliveryLog": { "technologyTag": "Lua", "submitterName": "黄永熙" },
           "verification": { "timeoutSeconds": 1200, "steps": [], "allowNoAutomatedTests": true, "reason": "演示夹具" },
           "finalActions": [
             { "id": "patch", "type": "patch", "outputDirectory": "E:\\Patches", "required": true },
@@ -67,7 +67,7 @@
       "routingRules": [{ "id": "primary-route", "providerRef": "Haru TAPD", "priority": 100, "catchAll": true, "conditions": [] }],
       "localizationSource": { "id": "localization-source", "type": "directory", "path": "E:\\Knowledge\\Client", "readOnly": true },
       "modificationWorkspace": { "id": "modification-workspace", "path": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "repositoryRoot": "E:\\Repos\\Client", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
-      "deliveryLog": { "technologyTag": "Lua", "branchLabel": "主干", "versionSource": "ticketFixVersion", "versionFallback": "v4.7", "submitterName": "黄永熙" },
+      "deliveryLog": { "technologyTag": "Lua", "submitterName": "黄永熙" },
       "verification": { "timeoutSeconds": 1200, "steps": [], "allowNoAutomatedTests": true, "reason": "演示夹具" },
       "finalActions": [
         { "id": "patch", "type": "patch", "outputDirectory": "E:\\Patches", "required": true },
@@ -151,7 +151,7 @@
         ],
         "conclusion": { "schema_version": 1, "outcome": "changed", "headline": "已修复弱网重连后的角色列表刷新", "cause": "重连完成后角色缓存仍沿用旧会话标识。", "resolution": "在会话重建后主动失效角色缓存，并补充空列表保护。" },
         "change_manifest": { "schema_version": 1, "change_version": 1, "files": [{ "path": "src/login/RoleList.lua", "operation": "modify", "content_sha256": "0000000000000000000000000000000000000000000000000000000000000000" }] },
-        "delivery_metadata": { "schema_version": 1, "commit_subject": "fix：【Lua】【#B248612】【主干】【v4.7】登录 - 弱网重连角色列表刷新修复  提交人：黄永熙", "patch_filename": "repair.patch", "ticket_key": "B248612", "technology_tag": "Lua", "branch_label": "主干", "version_label": "v4.7", "module_name": "登录", "change_summary": "弱网重连角色列表刷新修复", "submitter_name": "黄永熙", "conventional_type": "fix" },
+        "delivery_metadata": { "schema_version": 1, "commit_subject": "fix：【Lua】【#B248612】【v4.7】登录 - 弱网重连角色列表刷新修复  提交人：黄永熙", "patch_filename": "repair.patch", "ticket_key": "B248612", "technology_tag": "Lua", "version_label": "v4.7", "module_name": "登录", "change_summary": "弱网重连角色列表刷新修复", "submitter_name": "黄永熙", "conventional_type": "fix" },
         "delivery_actions": [
           { "id": 1, "action_id": "gitlab-push", "action_type": "gitlabPush", "status": "failed", "result": { "code": "gitlab_push_failed", "error": "origin 权限拒绝" }, "targets": [] },
           { "id": 2, "action_id": "fallback-patch", "action_type": "fallbackPatch", "status": "succeeded", "result": { "path": ".local/data/fallback-patches/task-failed.patch" }, "targets": [] }

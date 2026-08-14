@@ -23,7 +23,7 @@ const emptyProject = (): ProjectConfig => ({
   localizationSource: { id: 'localization-source', type: 'directory', path: '', readOnly: true },
   modificationWorkspace: { id: 'modification-workspace', path: '', allowedRoots: ['.'], deniedRoots: [], allowedExtensions: [] },
   verification: { timeoutSeconds: 1200, steps: [], allowNoAutomatedTests: false, reason: '' },
-  deliveryLog: { technologyTag:'Lua', branchLabel:'主干', versionSource:'ticketFixVersion', versionFallback:'v1.0', submitterName:'' },
+  deliveryLog: { technologyTag:'Lua', submitterName:'' },
   finalActions: [],
 })
 
@@ -72,7 +72,7 @@ export function ProjectsPage() {
   const route = editor ? firstRule(editor) : null
   const routeCondition = route?.conditions?.[0]
   const actions = editor?.finalActions ?? []
-  const deliveryLog = editor?.deliveryLog ?? {technologyTag:'Lua',branchLabel:'主干',versionSource:'ticketFixVersion' as const,versionFallback:'v1.0',submitterName:''}
+  const deliveryLog = editor?.deliveryLog ?? {technologyTag:'Lua',submitterName:''}
   const patch = actionOf(actions,'patch')
   const gitlabPush = actionOf(actions,'gitlabPush')
   const pr = actionOf(actions,'githubPr')
@@ -152,10 +152,10 @@ export function ProjectsPage() {
   }
 
   const stepComplete = {
-    1:Boolean(editor?.id && editor?.name?.trim() && route?.providerRef),
+    1:Boolean(editor?.name?.trim() && route?.providerRef),
     2:Boolean(editor?.localizationSource?.path),
     3:Boolean(editor?.modificationWorkspace?.path && detection?.ready),
-    4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.branchLabel.trim() && editor.deliveryLog.versionFallback.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
+    4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
   }
   const canSave = stepComplete[1] && stepComplete[2] && stepComplete[3] && stepComplete[4]
   const next = () => setStep(value => Math.min(4,value + 1) as Step)
@@ -170,7 +170,7 @@ export function ProjectsPage() {
         const pf = preflights[project.id]
         const projectActions = project.finalActions ?? []
         return <article className="project-card project-ledger-card" data-health={pf?.ready ? 'ready' : pf ? 'failed' : project.enabled === false ? 'inactive' : 'unknown'} key={project.id}>
-          <header><div><small>{project.id}</small><h2>{project.name || project.id}</h2></div><span className={`readiness-badge ${pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
+          <header><div><small>修复流水线</small><h2>{project.name || '未命名流水线'}</h2></div><span className={`readiness-badge ${pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
           <div className="project-path-story"><div><span>定位资料</span><b>{project.localizationSource?.path || '未配置'}</b></div><i/><div><span>修改工程 · {sourceLabel(project)}</span><b>{project.modificationWorkspace?.path || '未配置'}</b></div></div>
           <div className="delivery-tags">{projectActions.length ? projectActions.map(item => <span key={item.id}>{labelForAction(item)}</span>) : <span className="muted-tag">未配置交付</span>}</div>
           {pf && !pf.ready && <div className="preflight-issue">{pf.checks.find(item => item.status === 'failed')?.summary ?? '配置尚未就绪'}</div>}
@@ -190,7 +190,7 @@ export function ProjectsPage() {
 
         <div className="workbench-body">
           {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单进入哪条线</h3><p>反馈源负责收取正文；流水线规则决定由哪套定位、修改和交付策略处理。</p></div></div>
-            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>流水线 ID<input value={editor.id} disabled={!!editingId} onChange={e => setEditor({...editor,id:e.target.value})} placeholder="client-lua"/></label><label className="span-field">工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
+            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
             {providerIds.length === 0 && <div className="soft-warning">还没有可选反馈源。请先到“反馈源”连接 Redmine 或 TAPD。</div>}
           </div>}
 
@@ -209,7 +209,7 @@ export function ProjectsPage() {
           </div>}
 
           {step === 4 && <div className="step-panel"><div className="step-intro"><span>04</span><div><h3>选择一个或多个交付出口</h3><p>每个动作共用同一条冻结日志；远端交付失败时会自动额外保留 Patch。</p></div></div>
-            <div className="delivery-log-config"><div className="delivery-log-head"><span>交付日志</span><p>固定前后缀由程序填写，AI 只生成模块名与修改摘要。</p></div><div className="form-grid polished-form"><label>技术域<input value={deliveryLog.technologyTag} onChange={e => updateDeliveryLog({technologyTag:e.target.value})} placeholder="Lua"/></label><label>分支标签<input value={deliveryLog.branchLabel} onChange={e => updateDeliveryLog({branchLabel:e.target.value})} placeholder="主干"/></label><label>版本来源<select value={deliveryLog.versionSource} onChange={e => updateDeliveryLog({versionSource:e.target.value as 'fixed'|'ticketFixVersion'})}><option value="ticketFixVersion">工单修复版本</option><option value="fixed">固定版本</option></select></label><label>版本 / 兜底<input value={deliveryLog.versionFallback} onChange={e => updateDeliveryLog({versionFallback:e.target.value})} placeholder="v4.8"/></label><label className="span-field">提交人姓名<input value={deliveryLog.submitterName} onChange={e => updateDeliveryLog({submitterName:e.target.value})} placeholder="例如：黄永熙"/><small>写入“提交人：”之后；不等同于 Git Author 或 GitLab 用户名。</small></label></div><code>fix：【{deliveryLog.technologyTag || 'Lua'}】【#B1250062】【{deliveryLog.branchLabel || '主干'}】【{deliveryLog.versionFallback || 'v4.8'}】AI 模块名 - AI 修改摘要&nbsp;&nbsp;提交人：{deliveryLog.submitterName || '姓名'}</code></div>
+            <div className="delivery-log-config"><div className="delivery-log-head"><span>交付日志</span><p>工单有修复版本时自动插入；没有版本时直接省略。AI 只生成模块名与修改摘要。</p></div><div className="form-grid polished-form"><label>技术域<input value={deliveryLog.technologyTag} onChange={e => updateDeliveryLog({technologyTag:e.target.value})} placeholder="Lua"/></label><label>提交人姓名<input value={deliveryLog.submitterName} onChange={e => updateDeliveryLog({submitterName:e.target.value})} placeholder="例如：黄永熙"/><small>写入“提交人：”之后；不等同于 Git Author 或 GitLab 用户名。</small></label></div><code>fix：【{deliveryLog.technologyTag || 'Lua'}】【#B1250062】AI 模块名 - AI 修改摘要&nbsp;&nbsp;提交人：{deliveryLog.submitterName || '姓名'}</code></div>
             <div className="action-choice-grid">
               <button className={`action-choice ${patch ? 'selected' : ''}`} onClick={() => toggleAction('patch')}><span className="choice-check">{patch ? '✓' : ''}</span><svg viewBox="0 0 32 32"><path d="M7 5h13l5 5v17H7z"/><path d="M20 5v6h6M11 17h10M11 21h7"/></svg><div><b>生成 Patch</b><small>任何 Git / SVN 工程都可用</small></div></button>
               <button disabled={detection?.hostingKind !== 'gitlab'} className={`action-choice ${gitlabPush ? 'selected' : ''}`} onClick={() => toggleAction('gitlabPush')}><span className="choice-check">{gitlabPush ? '✓' : ''}</span><svg viewBox="0 0 32 32"><path d="m5 13 4-9 4 9h6l4-9 4 9-11 14Z"/></svg><div><b>推送到 GitLab</b><small>{detection?.hostingKind === 'gitlab' ? '返回 Commit，由你在 Web 手动 Cherry-pick' : '仅 GitLab 工程可选'}</small></div></button>
@@ -223,7 +223,9 @@ export function ProjectsPage() {
             </div>
           </div>}
 
-          <details className="project-policy"><summary><span>修改与检查规则</span><small>限制可改文件，并设置完成后的自动检查</small></summary><div className="policy-body">
+          {/* 规则属于「在这个工程里能改什么、改完怎么验」，语义归第 3 步。
+              放在 step 判断之外会让它在四步里全程常驻，用户在选交付出口时也看得到它。 */}
+          {step === 3 && <details className="project-policy"><summary><span>修改与检查规则</span><small>限制可改文件，并设置完成后的自动检查</small></summary><div className="policy-body">
             <h4>允许修改哪些文件</h4><div className="form-grid polished-form"><label>可修改目录<input value={(editor.modificationWorkspace?.allowedRoots ?? ['.']).join(', ')} onChange={e => updateWorkspace({allowedRoots:csv(e.target.value)})}/></label><label>禁止修改目录<input value={(editor.modificationWorkspace?.deniedRoots ?? []).join(', ')} onChange={e => updateWorkspace({deniedRoots:csv(e.target.value)})} placeholder="vendor, generated"/></label><label className="span-field">可修改文件类型<input value={(editor.modificationWorkspace?.allowedExtensions ?? []).join(', ')} onChange={e => updateWorkspace({allowedExtensions:csv(e.target.value)})} placeholder="留空表示不限制；例如 .py, .ts, .lua, .prefab"/></label></div>
             <div className="advanced-heading"><h4>完成后自动检查</h4><button className="ghost framed" onClick={addVerification}>添加检查</button></div>
             {(editor.verification?.steps ?? []).map((item,index) => <div className="verification-row" key={`${item.id}-${index}`}><input value={item.id} onChange={e => updateVerification(index,{id:e.target.value})} placeholder="检查名称"/><select value={item.executableRef} onChange={e => updateVerification(index,{executableRef:e.target.value})}><option value="">运行工具</option>{executableIds.map(id => <option key={id}>{id}</option>)}</select><input value={item.args.join(' ')} onChange={e => updateVerification(index,{args:e.target.value.split(' ').filter(Boolean)})} placeholder="运行参数"/><input value={item.workingDirectory ?? '.'} onChange={e => updateVerification(index,{workingDirectory:e.target.value})} placeholder="运行目录"/><button className="ghost" aria-label="移除检查" onClick={() => setEditor({...editor,verification:{...editor.verification,steps:(editor.verification?.steps ?? []).filter((_,i) => i !== index)}})}>×</button></div>)}
@@ -231,7 +233,7 @@ export function ProjectsPage() {
             {editor.verification?.allowNoAutomatedTests && <label className="wide-label">原因<textarea value={editor.verification.reason ?? ''} onChange={e => setEditor({...editor,verification:{...editor.verification,reason:e.target.value}})}/></label>}
             <h4>工单接收规则</h4><div className="form-grid polished-form"><label>匹配优先级<input type="number" value={route.priority} onChange={e => updateRule({priority:Number(e.target.value) || 0})}/></label><label className="check-row"><input type="checkbox" checked={!!route.catchAll} onChange={e => updateRule({catchAll:e.target.checked,conditions:e.target.checked ? [] : [{field:'module',operator:'contains',value:''}]})}/><span>接收该反馈源的全部工单</span></label></div>
             {!route.catchAll && <div className="route-condition"><label>字段<input value={String(routeCondition?.field ?? 'module')} onChange={e => updateRule({conditions:[{field:e.target.value,operator:(routeCondition?.operator ?? 'contains') as RoutingOperator,value:routeCondition?.value ?? ''}]})}/></label><label>条件<select value={routeCondition?.operator ?? 'contains'} onChange={e => updateRule({conditions:[{field:routeCondition?.field ?? 'module',operator:e.target.value as RoutingOperator,value:routeCondition?.value ?? ''}]})}><option value="contains">包含</option><option value="eq">等于</option><option value="neq">不等于</option><option value="exists">存在</option></select></label><label>值<input disabled={routeCondition?.operator === 'exists'} value={String(routeCondition?.value ?? '')} onChange={e => updateRule({conditions:[{field:routeCondition?.field ?? 'module',operator:(routeCondition?.operator ?? 'contains') as RoutingOperator,value:e.target.value}]})}/></label></div>}
-          </div></details>
+          </div></details>}
         </div>
       </div>
       <footer className="workbench-actions"><span>{canSave ? '配置完整，可以保存' : `第 ${step} 步还有必填项`}</span><div><button className="ghost" onClick={closeEditor}>取消</button>{step > 1 && <button className="ghost framed" onClick={() => setStep(value => Math.max(1,value - 1) as Step)}>上一步</button>}{step < 4 ? <button className="primary compact" disabled={!stepComplete[step]} onClick={next}>继续</button> : <button className="primary compact" disabled={busy === 'save' || !canSave} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存并体检'}</button>}</div></footer>

@@ -6,9 +6,6 @@ from codefixer.application.services.delivery_metadata import build_delivery_meta
 PROJECT = {
     "deliveryLog": {
         "technologyTag": "Lua",
-        "branchLabel": "主干",
-        "versionSource": "ticketFixVersion",
-        "versionFallback": "v4.7",
         "submitterName": "黄永熙",
     }
 }
@@ -27,7 +24,7 @@ def test_tapd_bug_uses_fix_and_b_prefix() -> None:
     )
 
     assert result["ticket_key"] == "B1250062"
-    assert result["commit_subject"] == "fix：【Lua】【#B1250062】【主干】【v4.8】阵容 - 卡片匹配度修复  提交人：黄永熙"
+    assert result["commit_subject"] == "fix：【Lua】【#B1250062】【v4.8】阵容 - 卡片匹配度修复  提交人：黄永熙"
     assert result["patch_filename"].endswith(".patch")
     assert ":" not in result["patch_filename"]
 
@@ -45,6 +42,8 @@ def test_tapd_story_uses_feat_and_s_prefix() -> None:
 
     assert result["ticket_key"] == "S1149986"
     assert result["conventional_type"] == "feat"
+    assert "version_label" not in result
+    assert result["commit_subject"] == "feat：【Lua】【#S1149986】音频支持 - 音乐特效彩蛋  提交人：黄永熙"
 
 
 def test_redmine_always_uses_fix_without_letter_prefix() -> None:

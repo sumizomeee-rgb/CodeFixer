@@ -5,9 +5,6 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from codefixer.adapters.tickets.factory import build_ticket_provider
-from codefixer.application.services.ingestion import poll_configured_provider
-from codefixer.infrastructure.database import connect_database
-
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 
 
@@ -50,30 +47,3 @@ def test_provider(provider_id: str, request: Request) -> dict[str, object]:
                 "reason": str(exc),
             },
         ) from exc
-
-
-@router.post("/{provider_id}/poll")
-def poll_provider(provider_id: str, request: Request) -> dict[str, object]:
-    config = _provider_config(request, provider_id)
-    store = request.app.state.config_store
-    connection = connect_database(request.app.state.db_path)
-    try:
-        try:
-            return poll_configured_provider(
-                connection,
-                config,
-                store.loaded.config.projects,
-                store.loaded.config.execution.mode,
-                store.get_secret,
-            )
-        except Exception as exc:
-            raise HTTPException(
-                status_code=503,
-                detail={
-                    "code": "provider_unavailable",
-                    "message": f"工单来源轮询失败：{provider_id}",
-                    "reason": str(exc),
-                },
-            ) from exc
-    finally:
-        connection.close()

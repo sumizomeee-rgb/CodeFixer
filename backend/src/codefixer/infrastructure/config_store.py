@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -65,6 +66,12 @@ class ConfigStore:
         self._local_path = loaded.local_config_path or self._default_local_path(loaded.base_config_path)
         self._secrets_path = loaded.secrets_config_path or self._default_secrets_path(loaded.base_config_path)
         self._loaded = loaded
+        if any(not str(project.get("intakeStartedAt") or "").strip() for project in loaded.config.projects):
+            payload = loaded.config.model_dump(mode="json")
+            migrated_at = datetime.now(UTC).isoformat()
+            for project in payload["projects"]:
+                project.setdefault("intakeStartedAt", migrated_at)
+            self.replace_effective(AppConfig.model_validate(payload))
 
     @staticmethod
     def _config_root(base_path: Path) -> Path:
@@ -119,7 +126,7 @@ class ConfigStore:
     def create_project(self, project: dict[str, Any]) -> LoadedConfig:
         project_id = str(project.get("id", "")).strip()
         if not project_id:
-            raise ValueError("project.id is required")
+            raise ValueError("流水线内部标识不能为空")
         if any(str(item.get("id")) == project_id for item in self._loaded.config.projects):
             raise KeyError(project_id)
         payload = self._loaded.config.model_dump(mode="json")

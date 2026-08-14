@@ -34,7 +34,7 @@ export type PatchActionConfig = { id:string; type:'patch'; outputDirectory?:stri
 export type GitLabPushActionConfig = { id:string; type:'gitlabPush'; required?:boolean }
 export type GitHubPrActionConfig = { id:string; type:'githubPr'; targetBranches:string[]; titleTemplate?:string; descriptionTemplate?:string; required?:boolean }
 export type FinalActionConfig = PatchActionConfig | GitLabPushActionConfig | GitHubPrActionConfig
-export type DeliveryLogConfig = { technologyTag:string; branchLabel:string; versionSource:'fixed'|'ticketFixVersion'; versionFallback:string; submitterName:string }
+export type DeliveryLogConfig = { technologyTag:string; submitterName:string }
 
 export type AppConfig = {
   schemaVersion:number
@@ -52,6 +52,7 @@ export type ProjectConfig = {
   id:string
   name?:string
   enabled?:boolean
+  intakeStartedAt?:string
   routingRules?:RoutingRule[]
   localizationSource?:LocalizationSourceConfig
   modificationWorkspace?:ModificationWorkspaceConfig

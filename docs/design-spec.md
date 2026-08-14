@@ -254,6 +254,10 @@ Claude Code、Codex、OpenCode 分别实现 Runtime 适配器。Runtime 是执�
 
 系统持续轮询并收录 Bug，但只完成轻量的工单持久化：
 
+- 每条流水线在创建成功时冻结自己的 `intakeStartedAt`，只接收创建时间不早于该时间的工单。
+- 同一反馈源上的多条流水线各自判断接单边界；反馈源增量游标仅用于降低轮询成本，不能替代流水线边界。
+- 历史工单即使之后被更新，也不会因此进入较晚创建的流水线；历史导入必须是未来单独且明确确认的操作。
+
 - 不调用 Agent。
 - 不准备写工作区。
 - 不修改代码。
@@ -905,16 +909,13 @@ overwrite: false
 ```yaml
 deliveryLog:
   technologyTag: "Lua"
-  branchLabel: "主干"
-  versionSource: ticketFixVersion
-  versionFallback: "v4.8"
   submitterName: "黄永熙"
 finalActions:
   - type: gitlabPush
     id: gitlab-push
 ```
 
-“最终动作”步骤顶部提供一个公共“交付日志”区，填写技术域、分支标签、版本来源/兜底版本和提交人姓名；它属于同一次冻结交付，不在 Patch、GitLab Push、GitHub PR 卡片中重复填写。版本来源第一版支持“固定版本”和“工单修复版本”：TAPD 读取明确映射的修复版本字段，Redmine 读取 `fixed_version.name`；字段为空时必须使用配置的兜底值或在 Preflight 阻止启动，不允许 LLM 猜版本。
+“最终动作”步骤顶部提供一个公共“交付日志”区，只填写技术域和提交人姓名；它属于同一次冻结交付，不在 Patch、GitLab Push、GitHub PR 卡片中重复填写。版本由平台从工单明确字段反推：TAPD 读取修复版本字段，Redmine 读取 `fixed_version.name`；字段为空时日志直接省略版本，不使用固定值或兜底值，也不允许 LLM 猜版本。
 
 动作直接复用流水线唯一的 `ModificationWorkspace`，只在其自动识别为 `hostingKind=gitlab` 后开放。用户不重复选择仓库，不配置目标分支、MR、assignee、GitLab API Token、Project Path 或独立 connection。仓库推送复用部署用户已经配置的 SSH key / Git credential。
 
@@ -925,7 +926,7 @@ finalActions:
 平台冻结统一 Commit subject：
 
 ```text
-{type}：【{技术域}】【#{工单标识}】【{分支标签}】【{版本}】{模块名} - {修改摘要}  提交人：{姓名}
+{type}：【{技术域}】【#{工单标识}】[【{版本}】]{模块名} - {修改摘要}  提交人：{姓名}
 ```
 
 字段规则：
@@ -933,7 +934,7 @@ finalActions:
 - TAPD Bug：`type=fix`，工单标识为 `B<id>`。
 - TAPD 非 Bug：`type=feat`，工单标识为 `S<id>`。
 - Redmine：无论 tracker，统一 `type=fix`，工单标识只使用原始 `<id>`，不加字母。
-- 技术域、分支标签和版本来自流水线配置或明确的工单字段映射，不由 LLM 猜测。
+- 技术域来自流水线配置；版本仅来自明确的工单字段映射，没有值时整段省略，不由 LLM 猜测。
 - LLM 只输出简短的 `module_name` 和 `change_summary`；Review Agent 验证其与冻结修改一致，平台负责固定标点和拼装。
 - 姓名来自 `submitterName`；不得从 Git Author、邮箱或 GitLab 用户名反推。
 
@@ -2054,13 +2055,12 @@ Task 顶层状态表示当前 active run；没有 active run 时表示最后一�
   "conventional_type": "fix",
   "technology_tag": "Lua",
   "ticket_key": "B1250062",
-  "branch_label": "主干",
   "version_label": "v4.8",
   "module_name": "一键培养目标总览",
   "change_summary": "阵容卡片匹配度修复",
   "submitter_name": "黄永熙",
-  "commit_subject": "fix：【Lua】【#B1250062】【主干】【v4.8】一键培养目标总览 - 阵容卡片匹配度修复  提交人：黄永熙",
-  "patch_filename": "fix：【Lua】【#B1250062】【主干】【v4.8】一键培养目标总览 - 阵容卡片匹配度修复  提交人：黄永熙.patch"
+  "commit_subject": "fix：【Lua】【#B1250062】【v4.8】一键培养目标总览 - 阵容卡片匹配度修复  提交人：黄永熙",
+  "patch_filename": "fix：【Lua】【#B1250062】【v4.8】一键培养目标总览 - 阵容卡片匹配度修复  提交人：黄永熙.patch"
 }
 ```
 

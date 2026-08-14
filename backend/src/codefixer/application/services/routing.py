@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any, Literal
 
 from codefixer.domain.tasks import IngestedTicket
 
-RouteKind = Literal["matched", "not_found", "ambiguous"]
+RouteKind = Literal["matched", "not_found", "ambiguous", "ignored_before_intake"]
 
 
 @dataclass(frozen=True)
@@ -42,8 +43,20 @@ def _condition_matches(payload: dict[str, object], condition: dict[str, Any]) ->
     raise ValueError(f"unsupported routing operator: {op}")
 
 
+def _timestamp(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+
 def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> RouteDecision:
-    candidates: list[tuple[int, str, str]] = []
+    candidates: list[tuple[int, str, str, datetime | None]] = []
+    ticket_created_at = _timestamp(ticket.payload.get("createdAt"))
     for project in projects:
         project_id = str(project.get("id", "")).strip()
         if not project_id or project.get("enabled", True) is False:
@@ -56,7 +69,12 @@ def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> Rout
                 _condition_matches(ticket.payload, condition) for condition in conditions
             ):
                 candidates.append(
-                    (int(rule.get("priority", 0)), project_id, str(rule.get("id", "route")))
+                    (
+                        int(rule.get("priority", 0)),
+                        project_id,
+                        str(rule.get("id", "route")),
+                        _timestamp(project.get("intakeStartedAt")),
+                    )
                 )
     if not candidates:
         return RouteDecision(
@@ -86,4 +104,11 @@ def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> Rout
                 "projects": unique_projects,
             },
         )
+    selected_intake = next(item[3] for item in top if item[1] == unique_projects[0])
+    if (
+        ticket_created_at is None
+        or selected_intake is None
+        or ticket_created_at < selected_intake
+    ):
+        return RouteDecision("ignored_before_intake", None)
     return RouteDecision("matched", unique_projects[0])

@@ -22,18 +22,15 @@ def _ticket_identity(context: dict[str, Any]) -> tuple[str, str]:
     return ("fix", f"B{raw_id}") if is_bug else ("feat", f"S{raw_id}")
 
 
-def _version_label(context: dict[str, Any], config: dict[str, Any]) -> str:
-    source = str(config.get("versionSource") or "fixed")
-    fallback = _clean_text(config.get("versionFallback"), fallback="未标注", maximum=40)
-    if source != "ticketFixVersion":
-        return fallback
+def _version_label(context: dict[str, Any]) -> str | None:
     payload = context.get("ticket_payload") if isinstance(context.get("ticket_payload"), dict) else {}
     value: object = payload.get("versionFix")
     if value is None:
         value = payload.get("version")
     if isinstance(value, dict):
         value = value.get("name")
-    return _clean_text(value, fallback=fallback, maximum=40)
+    cleaned = _clean_text(value, fallback="", maximum=40)
+    return cleaned or None
 
 
 def _safe_patch_filename(subject: str) -> str:
@@ -51,25 +48,23 @@ def build_delivery_metadata(
     config = project.get("deliveryLog") if isinstance(project.get("deliveryLog"), dict) else {}
     conventional_type, ticket_key = _ticket_identity(context)
     technology = _clean_text(config.get("technologyTag"), fallback="Code", maximum=40)
-    branch = _clean_text(config.get("branchLabel"), fallback="默认", maximum=40)
-    version = _version_label(context, config)
+    version = _version_label(context)
     module = _clean_text(repair.get("module_name"), fallback="通用模块", maximum=40)
     change = _clean_text(repair.get("change_summary") or repair.get("summary"), fallback="问题修复", maximum=80)
     submitter = _clean_text(config.get("submitterName"), fallback="CodeFixer", maximum=60)
-    subject = (
-        f"{conventional_type}：【{technology}】【#{ticket_key}】【{branch}】【{version}】"
-        f"{module} - {change}  提交人：{submitter}"
-    )
-    return {
+    version_fragment = f"【{version}】" if version else ""
+    subject = f"{conventional_type}：【{technology}】【#{ticket_key}】{version_fragment}{module} - {change}  提交人：{submitter}"
+    result = {
         "schema_version": 1,
         "conventional_type": conventional_type,
         "technology_tag": technology,
         "ticket_key": ticket_key,
-        "branch_label": branch,
-        "version_label": version,
         "module_name": module,
         "change_summary": change,
         "submitter_name": submitter,
         "commit_subject": subject,
         "patch_filename": _safe_patch_filename(subject),
     }
+    if version:
+        result["version_label"] = version
+    return result

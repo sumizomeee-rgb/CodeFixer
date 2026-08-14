@@ -54,7 +54,7 @@ def context(patch: Path, *, base_revision: str = "base", run_id: str = "run-1234
         patch_sha256="a" * 64,
         manifest_path=patch.parent / "manifest.json",
         delivery_metadata_path=patch.parent / "delivery-metadata.json",
-        commit_subject="fix：【Lua】【#B42】【主干】【v1】模块 - 修复问题  提交人：Tester",
+        commit_subject="fix：【Lua】【#B42】【v1】模块 - 修复问题  提交人：Tester",
         patch_filename="repair.patch",
         ticket_key="B42",
     )

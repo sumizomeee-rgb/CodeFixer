@@ -164,7 +164,10 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     delivery_log = normalized.get("deliveryLog")
     if not isinstance(delivery_log, dict):
         raise ValueError("必须配置交付日志")
-    for key, label in (("technologyTag", "技术域"), ("branchLabel", "分支标签"), ("versionFallback", "版本或兜底版本"), ("submitterName", "提交人姓名")):
+    delivery_log.pop("branchLabel", None)
+    delivery_log.pop("versionSource", None)
+    delivery_log.pop("versionFallback", None)
+    for key, label in (("technologyTag", "技术域"), ("submitterName", "提交人姓名")):
         if not str(delivery_log.get(key) or "").strip():
             raise ValueError(f"交付日志缺少{label}")
     for action in actions:
@@ -188,7 +191,7 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
 def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict[str, Any]:
     checks: list[Check] = []
     project_id = str(project.get("id", "")).strip()
-    checks.append(_check("project.id", bool(project_id), "项目 ID 已配置" if project_id else "缺少项目 ID"))
+    checks.append(_check("project.id", bool(project_id), "流水线内部标识已生成" if project_id else "缺少流水线内部标识"))
     localization = project.get("localizationSource") or {}
     localization_type = str(localization.get("type", "")).strip()
     localization_path = _direct_path(localization.get("path"))
@@ -240,8 +243,8 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     checks.append(_check("delivery.actions", bool(actions), f"最终动作：{len(actions)} 个" if actions else "至少需要一个最终动作"))
     action_ids: set[str] = set()
     delivery_log = project.get("deliveryLog") if isinstance(project.get("deliveryLog"), dict) else {}
-    log_ready = all(str(delivery_log.get(key) or "").strip() for key in ("technologyTag", "branchLabel", "versionFallback", "submitterName"))
-    checks.append(_check("delivery.log", log_ready, "交付日志已配置" if log_ready else "交付日志缺少技术域、分支标签、版本或提交人", "在最终动作顶部补全交付日志" if not log_ready else None))
+    log_ready = all(str(delivery_log.get(key) or "").strip() for key in ("technologyTag", "submitterName"))
+    checks.append(_check("delivery.log", log_ready, "交付日志已配置" if log_ready else "交付日志缺少技术域或提交人", "在最终动作顶部补全交付日志" if not log_ready else None))
     for index, action in enumerate(actions):
         action_id = str(action.get("id", ""))
         action_type = str(action.get("type", ""))

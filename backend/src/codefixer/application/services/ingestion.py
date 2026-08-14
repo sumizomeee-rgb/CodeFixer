@@ -25,11 +25,15 @@ class IngestionService:
     def ingest_batch(self, provider_id: str, batch: TicketBatch) -> dict[str, object]:
         matched = 0
         failed_route = 0
+        ignored_before_intake = 0
         task_ids: list[str] = []
         for ticket in batch.tickets:
             if ticket.provider_instance_id != provider_id:
                 raise ValueError("provider batch contains foreign ticket")
             route = route_ticket(ticket, self.projects)
+            if route.kind == "ignored_before_intake":
+                ignored_before_intake += 1
+                continue
             if route.kind == "matched":
                 matched += 1
             else:
@@ -45,13 +49,13 @@ class IngestionService:
         return {
             "providerId": provider_id,
             "rawCount": batch.raw_count,
-            "ingested": len(batch.tickets),
+            "ingested": len(task_ids),
+            "ignoredBeforeIntake": ignored_before_intake,
             "matched": matched,
             "routingFailed": failed_route,
             "nextCursor": batch.next_cursor,
             "taskIds": task_ids,
         }
-
 
 def poll_configured_provider(
     connection: sqlite3.Connection,

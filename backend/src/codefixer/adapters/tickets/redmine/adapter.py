@@ -99,6 +99,8 @@ class RedmineTicketProvider:
             issue_id = int(summary["id"])
             issue = self._detail(issue_id)
             updated = str(issue.get("updated_on") or summary.get("updated_on") or "")
+            if cursor and updated and updated <= cursor:
+                continue
             if newest is None or updated > newest:
                 newest = updated
             status = issue.get("status") if isinstance(issue.get("status"), dict) else {}
@@ -110,6 +112,7 @@ class RedmineTicketProvider:
                 "externalTicketId": external_id,
                 "url": f"{str(self.client.base_url).rstrip('/')}/issues/{external_id}",
                 "title": str(issue.get("subject", "")),
+                "createdAt": issue.get("created_on"),
                 "description": issue.get("description"),
                 "project": issue.get("project"),
                 "tracker": issue.get("tracker"),
