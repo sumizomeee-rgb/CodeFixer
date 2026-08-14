@@ -41,3 +41,69 @@ def test_route_ticket__does_not_fall_back_when_selected_pipeline_is_too_new():
     ]
     result = route_ticket(_ticket(), projects)
     assert result.kind == "ignored_before_intake"
+
+
+def test_route_ticket__accepts_selected_tapd_version_by_name():
+    ticket = IngestedTicket(
+        "tapd-main",
+        "1",
+        "商城 Bug",
+        {"createdAt": "2026-08-11T00:00:00Z", "fixVersion": {"name": "4.7"}},
+    )
+    project = {
+        "id": "shop",
+        "intakeStartedAt": "2026-08-10T00:00:00Z",
+        "routingRules": [{
+            "providerRef": "tapd-main",
+            "priority": 1,
+            "catchAll": True,
+            "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]},
+        }],
+    }
+    assert route_ticket(ticket, [project]).kind == "matched"
+
+
+def test_route_ticket__ignores_unselected_or_unversioned_tickets():
+    project = {
+        "id": "shop",
+        "intakeStartedAt": "2026-08-10T00:00:00Z",
+        "routingRules": [{
+            "providerRef": "tapd-main",
+            "priority": 1,
+            "catchAll": True,
+            "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]},
+        }],
+    }
+    unselected = IngestedTicket("tapd-main", "2", "Bug", {"createdAt": "2026-08-11T00:00:00Z", "fixVersion": {"name": "4.8"}})
+    unversioned = IngestedTicket("tapd-main", "3", "Bug", {"createdAt": "2026-08-11T00:00:00Z"})
+    assert route_ticket(unselected, [project]).kind == "ignored_by_version"
+    assert route_ticket(unversioned, [project]).kind == "ignored_by_version"
+
+
+def test_route_ticket__all_versions_accepts_unversioned_ticket():
+    project = {
+        "id": "shop",
+        "intakeStartedAt": "2026-08-10T00:00:00Z",
+        "routingRules": [{"providerRef": "tapd-main", "priority": 1, "catchAll": True, "versionFilter": {"mode": "all", "versions": []}}],
+    }
+    assert route_ticket(_ticket(), [project]).kind == "matched"
+
+
+def test_route_ticket__redmine_does_not_fall_back_to_name_when_ids_differ():
+    project = {
+        "id": "shop",
+        "intakeStartedAt": "2026-08-10T00:00:00Z",
+        "routingRules": [{
+            "providerRef": "redmine-main",
+            "priority": 1,
+            "catchAll": True,
+            "versionFilter": {"mode": "selected", "versions": [{"id": "41", "name": "4.7"}]},
+        }],
+    }
+    ticket = IngestedTicket(
+        "redmine-main",
+        "4",
+        "Bug",
+        {"createdAt": "2026-08-11T00:00:00Z", "fixVersion": {"id": 99, "name": "4.7"}},
+    )
+    assert route_ticket(ticket, [project]).kind == "ignored_by_version"

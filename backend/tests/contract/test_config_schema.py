@@ -36,6 +36,14 @@ def test_server_config_contract__accepts_new_project_sources_and_actions():
         {
             "id": "demo",
             "name": "Demo",
+            "routingRules": [{
+                "id": "primary",
+                "providerRef": "tapd",
+                "priority": 100,
+                "catchAll": True,
+                "conditions": [],
+                "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]},
+            }],
             "localizationSource": {"id": "knowledge", "type": "directory", "path": "D:/knowledge"},
             "modificationWorkspace": {
                 "id": "workspace",

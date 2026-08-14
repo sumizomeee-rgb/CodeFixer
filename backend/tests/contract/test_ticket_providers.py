@@ -32,6 +32,86 @@ def test_redmine_provider__freezes_full_issue_and_uses_incremental_filter():
     assert list_request.url.params["updated_on"] == ">=2026-08-11T00:00:00Z"
 
 
+def test_redmine_provider__lists_versions_from_project_catalog():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/projects/client/versions.json"
+        return httpx.Response(
+            200,
+            json={
+                "versions": [
+                    {"id": 41, "name": "4.7", "status": "open"},
+                    {"id": 42, "name": "4.8", "status": "locked"},
+                ]
+            },
+        )
+
+    client = httpx.Client(base_url="https://redmine.example", transport=httpx.MockTransport(handler))
+    provider = RedmineTicketProvider(
+        {"id": "rm", "type": "redmine", "baseUrl": "https://redmine.example", "apiKeySecretRef": "rm-key", "projectId": "client"},
+        lambda _: "key-value",
+        client,
+    )
+    assert provider.list_versions() == [
+        {"id": "41", "name": "4.7"},
+        {"id": "42", "name": "4.8"},
+    ]
+
+
+def test_redmine_provider__falls_back_to_visible_issue_versions_when_catalog_is_forbidden():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/projects/client/versions.json":
+            return httpx.Response(403, json={"error": "forbidden"})
+        if request.url.path == "/issues.json":
+            return httpx.Response(
+                200,
+                json={
+                    "issues": [
+                        {"id": 7, "project": {"id": "client"}, "fixed_version": {"id": 41, "name": "4.7"}},
+                        {"id": 8, "project": {"id": "client"}, "fixed_version": {"id": 41, "name": "4.7"}},
+                    ],
+                    "total_count": 2,
+                },
+            )
+        raise AssertionError(request.url)
+
+    client = httpx.Client(base_url="https://redmine.example", transport=httpx.MockTransport(handler))
+    provider = RedmineTicketProvider(
+        {"id": "rm", "type": "redmine", "baseUrl": "https://redmine.example", "apiKeySecretRef": "rm-key", "projectId": "client"},
+        lambda _: "key-value",
+        client,
+    )
+    assert provider.list_versions() == [{"id": "41", "name": "4.7"}]
+
+
+def test_redmine_provider__discovers_version_catalogs_from_visible_issue_projects():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/issues.json":
+            return httpx.Response(
+                200,
+                json={
+                    "issues": [{"id": 7, "project": {"id": 12, "name": "Client"}}],
+                    "total_count": 1,
+                },
+            )
+        if request.url.path == "/projects/12/versions.json":
+            return httpx.Response(
+                200,
+                json={"versions": [{"id": 41, "name": "4.7"}, {"id": 42, "name": "4.8"}]},
+            )
+        raise AssertionError(request.url)
+
+    client = httpx.Client(base_url="https://redmine.example", transport=httpx.MockTransport(handler))
+    provider = RedmineTicketProvider(
+        {"id": "rm", "type": "redmine", "baseUrl": "https://redmine.example", "apiKeySecretRef": "rm-key"},
+        lambda _: "key-value",
+        client,
+    )
+    assert provider.list_versions() == [
+        {"id": "41", "name": "4.7"},
+        {"id": "42", "name": "4.8"},
+    ]
+
+
 def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
     paths: list[str] = []
 
@@ -60,3 +140,30 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
     assert ticket.payload["attachments"] == [{"id": "a1", "filename": "x.png"}]
     assert ticket.payload["changes"] == [{"id": "h1", "field": "status"}]
     assert "/bugs/get_link_bugs" in paths
+
+
+def test_tapd_provider__lists_workspace_versions():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/versions"
+        assert request.url.params["workspace_id"] == "101"
+        return httpx.Response(
+            200,
+            json={
+                "status": 1,
+                "data": [
+                    {"Version": {"id": "v41", "name": "4.7"}},
+                    {"Version": {"id": "v42", "name": "4.8"}},
+                ],
+            },
+        )
+
+    client = httpx.Client(base_url="https://api.tapd.cn", transport=httpx.MockTransport(handler))
+    provider = TapdTicketProvider(
+        {"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic"}},
+        lambda key: {"": None}.get(key),
+        client,
+    )
+    assert provider.list_versions() == [
+        {"id": "v41", "name": "4.7"},
+        {"id": "v42", "name": "4.8"},
+    ]

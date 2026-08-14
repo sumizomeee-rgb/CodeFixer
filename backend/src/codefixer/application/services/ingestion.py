@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -26,6 +27,7 @@ class IngestionService:
         matched = 0
         failed_route = 0
         ignored_before_intake = 0
+        ignored_by_version = 0
         task_ids: list[str] = []
         for ticket in batch.tickets:
             if ticket.provider_instance_id != provider_id:
@@ -33,6 +35,9 @@ class IngestionService:
             route = route_ticket(ticket, self.projects)
             if route.kind == "ignored_before_intake":
                 ignored_before_intake += 1
+                continue
+            if route.kind == "ignored_by_version":
+                ignored_by_version += 1
                 continue
             if route.kind == "matched":
                 matched += 1
@@ -51,6 +56,7 @@ class IngestionService:
             "rawCount": batch.raw_count,
             "ingested": len(task_ids),
             "ignoredBeforeIntake": ignored_before_intake,
+            "ignoredByVersion": ignored_by_version,
             "matched": matched,
             "routingFailed": failed_route,
             "nextCursor": batch.next_cursor,

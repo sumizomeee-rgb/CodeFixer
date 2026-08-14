@@ -1,0 +1,27 @@
+.version-filter { margin-top: 20px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.version-filter > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 12px; }
+.version-filter > header b,
+.version-filter > header small { display: block; }
+.version-filter > header b { font-size: 12px; }
+.version-filter > header small { margin-top: 4px; color: var(--tertiary); font-size: 10px; }
+.version-load-state { color: var(--signal); font: 600 10px/1.5 var(--font-mono); white-space: nowrap; }
+.version-mode-switch { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.version-mode-switch > button { position: relative; min-height: 66px; padding: 12px 40px 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); text-align: left; }
+.version-mode-switch > button:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-3); }
+.version-mode-switch > button.selected { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
+.version-mode-switch b,
+.version-mode-switch small { display: block; }
+.version-mode-switch b { font-size: 12px; }
+.version-mode-switch small { margin-top: 4px; color: var(--tertiary); font-size: 10px; }
+.version-mode-switch .choice-check { top: 50%; transform: translateY(-50%); }
+.version-load-error,
+.version-empty { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; padding: 9px 11px; border: 1px solid color-mix(in srgb,var(--failed) 35%,var(--line)); border-radius: var(--r-sharp); background: var(--failed-soft); color: var(--failed); font-size: 10px; }
+.version-empty { border-color: var(--line); background: var(--surface); color: var(--tertiary); }
+.version-options { display: flex; flex-wrap: wrap; gap: 7px; max-height: 118px; margin-top: 12px; padding-top: 12px; overflow-y: auto; border-top: 1px solid var(--line); }
+.version-options label { display: flex; align-items: center; gap: 7px; min-height: 30px; padding: 5px 9px; border: 1px solid var(--line); border-radius: var(--r-sharp); background: var(--surface); color: var(--muted); font-size: 10px; cursor: pointer; }
+.version-options label.selected { border-color: var(--signal); background: var(--signal-soft); color: var(--signal); }
+.version-options input { width: 13px; height: 13px; margin: 0; accent-color: var(--signal); }
+
+@media (max-width: 760px) {
+  .version-mode-switch { grid-template-columns: 1fr; }
+}

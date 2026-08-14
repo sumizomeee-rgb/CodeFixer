@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -64,6 +65,21 @@ class TapdTicketProvider:
         )
         return {"ready": isinstance(payload.get("data"), list), "providerId": self.provider_id}
 
+    def list_versions(self) -> list[dict[str, str]]:
+        versions = self._paged_objects(
+            "/versions", "Version", {"workspace_id": self.workspace_id}
+        )
+        result: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for version in versions:
+            version_id = str(version.get("id") or "").strip()
+            name = str(version.get("name") or "").strip()
+            if not version_id or not name or version_id in seen:
+                continue
+            seen.add(version_id)
+            result.append({"id": version_id, "name": name})
+        return result
+
     def _paged_objects(
         self, path: str, root_key: str, params: dict[str, object]
     ) -> list[dict[str, Any]]:
@@ -122,6 +138,7 @@ class TapdTicketProvider:
                 newest = modified
             bug_id = str(bug["id"])
             enriched = self._enrich(bug_id)
+            fix_version_name = str(bug.get("version_fix") or "").strip()
             payload: dict[str, object] = {
                 "provider": "tapd",
                 "providerInstanceId": self.provider_id,
@@ -137,6 +154,7 @@ class TapdTicketProvider:
                 "priority": bug.get("priority_label") or bug.get("priority"),
                 "versionReport": bug.get("version_report"),
                 "versionFix": bug.get("version_fix"),
+                "fixVersion": {"name": fix_version_name} if fix_version_name else None,
                 **enriched,
                 "raw": bug,
             }

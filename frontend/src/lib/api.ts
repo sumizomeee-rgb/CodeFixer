@@ -1,4 +1,4 @@
-import type { ExecutionMode, PreflightResult, ProjectConfig, ReadinessResponse, SettingsResponse, WorkspaceDetection } from '../entities/config'
+import type { ExecutionMode, PreflightResult, ProjectConfig, ProviderVersion, ReadinessResponse, SettingsResponse, WorkspaceDetection } from '../entities/config'
 import type { DashboardData, TaskRecord } from '../entities/task'
 
 export class ApiError extends Error { status:number; code:string; constructor(status:number,code:string,message:string){super(message);this.status=status;this.code=code} }
@@ -17,6 +17,7 @@ export const api={
   preflight:(projectId:string)=>request<PreflightResult>(`/api/projects/${encodeURIComponent(projectId)}/preflight`,{method:'POST'}),
   providers:()=>request<{items:Array<Record<string,unknown>&{id?:string;type?:string;enabled?:boolean}>}>('/api/providers'),
   testProvider:(id:string)=>request<Record<string,unknown>>(`/api/providers/${encodeURIComponent(id)}/test`,{method:'POST'}),
+  providerVersions:(id:string)=>request<{providerId:string;items:ProviderVersion[]}>(`/api/providers/${encodeURIComponent(id)}/versions`),
   tasks:()=>request<{items:TaskRecord[]}>('/api/tasks'),
   task:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}`),
   startTask:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}/start`,{method:'POST'}),

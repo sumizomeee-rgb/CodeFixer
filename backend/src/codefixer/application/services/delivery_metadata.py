@@ -24,7 +24,9 @@ def _ticket_identity(context: dict[str, Any]) -> tuple[str, str]:
 
 def _version_label(context: dict[str, Any]) -> str | None:
     payload = context.get("ticket_payload") if isinstance(context.get("ticket_payload"), dict) else {}
-    value: object = payload.get("versionFix")
+    value: object = payload.get("fixVersion")
+    if value is None:
+        value = payload.get("versionFix")
     if value is None:
         value = payload.get("version")
     if isinstance(value, dict):

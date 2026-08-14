@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 
 from codefixer.adapters.tickets.factory import build_ticket_provider
+
 router = APIRouter(prefix="/api/providers", tags=["providers"])
 
 
@@ -44,6 +45,23 @@ def test_provider(provider_id: str, request: Request) -> dict[str, object]:
             detail={
                 "code": "provider_unavailable",
                 "message": f"工单来源连接失败：{provider_id}",
+                "reason": str(exc),
+            },
+        ) from exc
+
+
+@router.get("/{provider_id}/versions")
+def list_provider_versions(provider_id: str, request: Request) -> dict[str, object]:
+    config = _provider_config(request, provider_id)
+    try:
+        provider = build_ticket_provider(config, request.app.state.config_store.get_secret)
+        return {"providerId": provider_id, "items": provider.list_versions()}
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "provider_versions_unavailable",
+                "message": f"无法读取反馈源版本：{provider_id}",
                 "reason": str(exc),
             },
         ) from exc

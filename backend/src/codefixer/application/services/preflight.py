@@ -127,6 +127,40 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     """校验项目的物理来源与动作能力，并固化服务端重新探测的事实。"""
 
     normalized = deepcopy(project)
+    for rule in normalized.get("routingRules") or []:
+        if not isinstance(rule, dict):
+            raise ValueError("工单接收规则格式无效")
+        version_filter = rule.get("versionFilter")
+        if version_filter is None:
+            continue
+        if not isinstance(version_filter, dict):
+            raise ValueError("接收版本配置格式无效")
+        mode = str(version_filter.get("mode", "all"))
+        if mode not in {"all", "selected"}:
+            raise ValueError("接收版本只能是全部版本或指定版本")
+        versions = version_filter.get("versions") or []
+        if not isinstance(versions, list):
+            raise ValueError("指定版本必须是版本列表")
+        normalized_versions: list[dict[str, str]] = []
+        seen: set[str] = set()
+        for version in versions:
+            if not isinstance(version, dict):
+                raise ValueError("指定版本格式无效")
+            version_id = str(version.get("id") or "").strip()
+            name = str(version.get("name") or "").strip()
+            if not version_id or not name:
+                raise ValueError("指定版本缺少内部标识或名称")
+            if version_id in seen:
+                raise ValueError("指定版本不能重复")
+            seen.add(version_id)
+            normalized_versions.append({"id": version_id, "name": name})
+        if mode == "selected" and not normalized_versions:
+            raise ValueError("选择指定版本后，至少需要选择一个版本")
+        rule["versionFilter"] = {
+            "mode": mode,
+            "versions": normalized_versions if mode == "selected" else [],
+        }
+
     localization = normalized.get("localizationSource")
     if not isinstance(localization, dict) or not str(localization.get("type", "")).strip():
         raise ValueError("必须配置带类型的定位源")

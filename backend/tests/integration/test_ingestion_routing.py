@@ -35,3 +35,31 @@ def test_ticket_before_pipeline_intake_is_not_persisted_as_task(tmp_path: Path):
         assert result["ingested"] == 0
         assert result["taskIds"] == []
         assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0
+
+
+def test_ticket_outside_selected_versions_is_not_persisted_as_task(tmp_path: Path):
+    db_path = initialize_database(tmp_path)
+    ticket = IngestedTicket(
+        "tapd",
+        "other-version",
+        "Other Version Bug",
+        {"createdAt": "2026-08-12T00:00:00Z", "fixVersion": {"name": "4.8"}},
+        "v1",
+    )
+    projects = [{
+        "id": "shop",
+        "intakeStartedAt": "2026-08-11T00:00:00Z",
+        "routingRules": [{
+            "providerRef": "tapd",
+            "priority": 10,
+            "catchAll": True,
+            "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]},
+        }],
+    }]
+    with connect_database(db_path) as db:
+        result = IngestionService(db, projects, "awaitingStart").ingest_batch(
+            "tapd", TicketBatch([ticket], "v1", 1)
+        )
+        assert result["ignoredByVersion"] == 1
+        assert result["ingested"] == 0
+        assert db.execute("SELECT COUNT(*) FROM tasks").fetchone()[0] == 0

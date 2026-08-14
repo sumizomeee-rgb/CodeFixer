@@ -6,6 +6,7 @@ import type {
   PatchActionConfig,
   PreflightResult,
   ProjectConfig,
+  ProviderVersion,
   RoutingOperator,
   SettingsResponse,
   VerificationStepConfig,
@@ -19,7 +20,7 @@ const emptyProject = (): ProjectConfig => ({
   id: '',
   name: '',
   enabled: true,
-  routingRules: [{ id: 'primary-route', providerRef: '', priority: 100, catchAll: true, conditions: [] }],
+  routingRules: [{ id: 'primary-route', providerRef: '', priority: 100, catchAll: true, conditions: [], versionFilter: {mode:'all',versions:[]} }],
   localizationSource: { id: 'localization-source', type: 'directory', path: '', readOnly: true },
   modificationWorkspace: { id: 'modification-workspace', path: '', allowedRoots: ['.'], deniedRoots: [], allowedExtensions: [] },
   verification: { timeoutSeconds: 1200, steps: [], allowNoAutomatedTests: false, reason: '' },
@@ -59,6 +60,10 @@ export function ProjectsPage() {
   const [preflights,setPreflights] = useState<Record<string,PreflightResult>>({})
   const [error,setError] = useState('')
   const [busy,setBusy] = useState('')
+  const [versions,setVersions] = useState<ProviderVersion[]>([])
+  const [versionLoad,setVersionLoad] = useState<'idle'|'loading'|'ready'|'failed'>('idle')
+  const [versionError,setVersionError] = useState('')
+  const [versionRetry,setVersionRetry] = useState(0)
 
   const reload = async () => {
     const [p,s] = await Promise.all([api.projects(),api.settings()])
@@ -70,12 +75,38 @@ export function ProjectsPage() {
   const providerIds = useMemo(() => settings?.config.ticketProviders.map(item => item.id).filter(Boolean) ?? [],[settings])
   const executableIds = useMemo(() => Object.keys(settings?.config.executableBindings ?? {}),[settings])
   const route = editor ? firstRule(editor) : null
+  const versionFilter = route?.versionFilter ?? {mode:'all' as const,versions:[]}
   const routeCondition = route?.conditions?.[0]
   const actions = editor?.finalActions ?? []
   const deliveryLog = editor?.deliveryLog ?? {technologyTag:'Lua',submitterName:''}
   const patch = actionOf(actions,'patch')
   const gitlabPush = actionOf(actions,'gitlabPush')
   const pr = actionOf(actions,'githubPr')
+
+  useEffect(() => {
+    const providerId = editor ? firstRule(editor).providerRef : ''
+    if (!providerId) {
+      setVersions([])
+      setVersionLoad('idle')
+      setVersionError('')
+      return
+    }
+    let active = true
+    setVersions([])
+    setVersionLoad('loading')
+    setVersionError('')
+    void api.providerVersions(providerId).then(result => {
+      if (!active) return
+      const saved = editor ? firstRule(editor).versionFilter?.versions ?? [] : []
+      setVersions([...result.items,...saved.filter(item => !result.items.some(value => value.id === item.id))])
+      setVersionLoad('ready')
+    }).catch(e => {
+      if (!active) return
+      setVersionLoad('failed')
+      setVersionError(e instanceof Error ? e.message : '版本列表加载失败')
+    })
+    return () => { active = false }
+  }, [editor ? firstRule(editor).providerRef : '',versionRetry])
 
   const openEditor = (project?:ProjectConfig) => {
     const next = project ? structuredClone(project) : emptyProject()
@@ -96,8 +127,13 @@ export function ProjectsPage() {
       checks:[],
     } : null)
   }
-  const closeEditor = () => { setEditor(null); setEditingId(null); setDetection(null) }
-  const updateRule = (patch:Partial<NonNullable<ProjectConfig['routingRules']>[number]>) => editor && setEditor({...editor,routingRules:[{...firstRule(editor),...patch}]})
+  const closeEditor = () => { setEditor(null); setEditingId(null); setDetection(null); setVersions([]); setVersionLoad('idle'); setVersionError('') }
+  const updateRule = (patch:Partial<NonNullable<ProjectConfig['routingRules']>[number]>) => setEditor(current => current ? {...current,routingRules:[{...firstRule(current),...patch}]} : current)
+  const setVersionMode = (mode:'all'|'selected') => updateRule({versionFilter:{mode,versions:mode === 'selected' ? versionFilter.versions : []}})
+  const toggleVersion = (version:ProviderVersion) => {
+    const selected = versionFilter.versions.some(item => item.id === version.id)
+    updateRule({versionFilter:{mode:'selected',versions:selected ? versionFilter.versions.filter(item => item.id !== version.id) : [...versionFilter.versions,version]}})
+  }
   const updateLocalization = (patch:Partial<NonNullable<ProjectConfig['localizationSource']>>) => editor && setEditor({...editor,localizationSource:{id:'localization-source',path:'',readOnly:true,...editor.localizationSource,...patch}})
   const updateWorkspace = (patch:Partial<NonNullable<ProjectConfig['modificationWorkspace']>>) => editor && setEditor({...editor,modificationWorkspace:{id:'modification-workspace',path:'',...editor.modificationWorkspace,...patch}})
   const updateDeliveryLog = (patch:Partial<NonNullable<ProjectConfig['deliveryLog']>>) => editor && setEditor({...editor,deliveryLog:{...deliveryLog,...patch}})
@@ -152,7 +188,7 @@ export function ProjectsPage() {
   }
 
   const stepComplete = {
-    1:Boolean(editor?.name?.trim() && route?.providerRef),
+    1:Boolean(editor?.name?.trim() && route?.providerRef && (versionFilter.mode === 'all' || versionFilter.versions.length > 0)),
     2:Boolean(editor?.localizationSource?.path),
     3:Boolean(editor?.modificationWorkspace?.path && detection?.ready),
     4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
@@ -190,7 +226,13 @@ export function ProjectsPage() {
 
         <div className="workbench-body">
           {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单进入哪条线</h3><p>反馈源负责收取正文；流水线规则决定由哪套定位、修改和交付策略处理。</p></div></div>
-            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
+            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value,versionFilter:{mode:'all',versions:[]}})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
+            {route.providerRef && <section className="version-filter" aria-labelledby="version-filter-title"><header><div><b id="version-filter-title">接收版本</b><small>按工单的合入版本 / 修复版本筛选，不需要填写字段名。</small></div>{versionLoad === 'loading' && <span className="version-load-state">正在读取…</span>}</header>
+              <div className="version-mode-switch"><button type="button" className={versionFilter.mode === 'all' ? 'selected' : ''} aria-pressed={versionFilter.mode === 'all'} onClick={() => setVersionMode('all')}><span className="choice-check">{versionFilter.mode === 'all' ? '✓' : ''}</span><div><b>全部版本</b><small>默认；也接收尚未填写修复版本的工单</small></div></button><button type="button" className={versionFilter.mode === 'selected' ? 'selected' : ''} aria-pressed={versionFilter.mode === 'selected'} disabled={versionLoad !== 'ready' || versions.length === 0} onClick={() => setVersionMode('selected')}><span className="choice-check">{versionFilter.mode === 'selected' ? '✓' : ''}</span><div><b>指定版本</b><small>{versionLoad === 'ready' && versions.length > 0 ? `从 ${versions.length} 个可用版本中多选` : '读取版本后可选'}</small></div></button></div>
+              {versionLoad === 'failed' && <div className="version-load-error"><span>{versionError}</span><button type="button" className="ghost action-link" onClick={() => setVersionRetry(value => value + 1)}>重试</button></div>}
+              {versionLoad === 'ready' && versions.length === 0 && <div className="version-empty">当前反馈源没有可选版本。“全部版本”仍会正常接收工单。</div>}
+              {versionFilter.mode === 'selected' && versions.length > 0 && <div className="version-options" aria-label="指定接收版本">{versions.map(version => { const checked = versionFilter.versions.some(item => item.id === version.id); return <label className={checked ? 'selected' : ''} key={version.id}><input type="checkbox" checked={checked} onChange={() => toggleVersion(version)}/><span>{version.name}</span></label> })}</div>}
+            </section>}
             {providerIds.length === 0 && <div className="soft-warning">还没有可选反馈源。请先到“反馈源”连接 Redmine 或 TAPD。</div>}
           </div>}
 

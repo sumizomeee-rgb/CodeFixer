@@ -6,7 +6,13 @@ from typing import Any, Literal
 
 from codefixer.domain.tasks import IngestedTicket
 
-RouteKind = Literal["matched", "not_found", "ambiguous", "ignored_before_intake"]
+RouteKind = Literal[
+    "matched",
+    "not_found",
+    "ambiguous",
+    "ignored_before_intake",
+    "ignored_by_version",
+]
 
 
 @dataclass(frozen=True)
@@ -43,6 +49,43 @@ def _condition_matches(payload: dict[str, object], condition: dict[str, Any]) ->
     raise ValueError(f"unsupported routing operator: {op}")
 
 
+def _version_identity(payload: dict[str, object]) -> tuple[str | None, str | None]:
+    value: object = payload.get("fixVersion")
+    if value is None:
+        value = payload.get("versionFix")
+    if value is None:
+        value = payload.get("version")
+    if isinstance(value, dict):
+        version_id = str(value.get("id") or "").strip() or None
+        name = str(value.get("name") or "").strip() or None
+        return version_id, name
+    name = str(value or "").strip() or None
+    return None, name
+
+
+def _version_matches(payload: dict[str, object], rule: dict[str, Any]) -> bool:
+    version_filter = rule.get("versionFilter")
+    if not isinstance(version_filter, dict) or version_filter.get("mode", "all") == "all":
+        return True
+    selected = version_filter.get("versions") or []
+    actual_id, actual_name = _version_identity(payload)
+    if actual_id is None and actual_name is None:
+        return False
+    for item in selected:
+        if not isinstance(item, dict):
+            continue
+        selected_id = str(item.get("id") or "").strip() or None
+        selected_name = str(item.get("name") or "").strip() or None
+        if actual_id is not None:
+            if selected_id == actual_id:
+                return True
+            continue
+        # TAPD 的工单 version_fix 只返回版本名称，因此保留精确名称匹配。
+        if actual_name is not None and selected_name == actual_name:
+            return True
+    return False
+
+
 def _timestamp(value: object) -> datetime | None:
     text = str(value or "").strip()
     if not text:
@@ -57,6 +100,8 @@ def _timestamp(value: object) -> datetime | None:
 def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> RouteDecision:
     candidates: list[tuple[int, str, str, datetime | None]] = []
     ticket_created_at = _timestamp(ticket.payload.get("createdAt"))
+    provider_rule_seen = False
+    version_accepted = False
     for project in projects:
         project_id = str(project.get("id", "")).strip()
         if not project_id or project.get("enabled", True) is False:
@@ -64,6 +109,10 @@ def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> Rout
         for rule in project.get("routingRules") or []:
             if str(rule.get("providerRef", "")) != ticket.provider_instance_id:
                 continue
+            provider_rule_seen = True
+            if not _version_matches(ticket.payload, rule):
+                continue
+            version_accepted = True
             conditions = rule.get("conditions") or []
             if rule.get("catchAll") is True or all(
                 _condition_matches(ticket.payload, condition) for condition in conditions
@@ -77,6 +126,8 @@ def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> Rout
                     )
                 )
     if not candidates:
+        if provider_rule_seen and not version_accepted:
+            return RouteDecision("ignored_by_version", None)
         return RouteDecision(
             "not_found",
             None,

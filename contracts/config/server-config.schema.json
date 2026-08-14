@@ -83,6 +83,39 @@
         }
       ]
     },
+    "routingRule": {
+      "type": "object",
+      "required": ["id", "providerRef", "priority"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "providerRef": {"type": "string", "minLength": 1},
+        "priority": {"type": "integer"},
+        "catchAll": {"type": "boolean"},
+        "conditions": {"type": "array"},
+        "versionFilter": {
+          "type": "object",
+          "required": ["mode", "versions"],
+          "properties": {
+            "mode": {"enum": ["all", "selected"]},
+            "versions": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "required": ["id", "name"],
+                "properties": {
+                  "id": {"type": "string", "minLength": 1},
+                  "name": {"type": "string", "minLength": 1}
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
     "project": {
       "type": "object",
       "required": ["id", "name", "localizationSource", "modificationWorkspace", "deliveryLog", "finalActions"],
@@ -90,6 +123,7 @@
         "id": {"type": "string", "minLength": 1},
         "name": {"type": "string", "minLength": 1},
         "intakeStartedAt": {"type": "string", "format": "date-time"},
+        "routingRules": {"type": "array", "items": {"$ref": "#/$defs/routingRule"}},
         "localizationSource": {"$ref": "#/$defs/localizationSource"},
         "modificationWorkspace": {"$ref": "#/$defs/modificationWorkspace"},
         "deliveryLog": {
