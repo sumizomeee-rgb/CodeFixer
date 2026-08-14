@@ -191,7 +191,7 @@ export function ProjectsPage() {
         <div className="workbench-body">
           {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单进入哪条线</h3><p>反馈源负责收取正文；流水线规则决定由哪套定位、修改和交付策略处理。</p></div></div>
             <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>流水线 ID<input value={editor.id} disabled={!!editingId} onChange={e => setEditor({...editor,id:e.target.value})} placeholder="client-lua"/></label><label className="span-field">工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
-            {providerIds.length === 0 && <div className="soft-warning">还没有可选反馈源。请先到“工单反馈来源”连接 Redmine 或 TAPD。</div>}
+            {providerIds.length === 0 && <div className="soft-warning">还没有可选反馈源。请先到“反馈源”连接 Redmine 或 TAPD。</div>}
           </div>}
 
           {step === 2 && <div className="step-panel"><div className="step-intro"><span>02</span><div><h3>为问题定位提供足够线索</h3><p>这是只读的辅助资料，可以是日志、分析工程或代码仓库；它不等于最终会被修改的工程。</p></div></div>

@@ -49,9 +49,9 @@ test('control tower surfaces real task facts and configuration tools', async ({ 
   await page.getByRole('button', { name: '关闭' }).click()
 
   await page.getByRole('button', { name: '反馈源', exact: true }).click()
-  await expect(page.getByRole('heading', { name: '工单反馈来源', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '反馈源', exact: true })).toBeVisible()
   await page.getByRole('button', { name: '添加反馈源' }).click()
-  await expect(page.getByRole('heading', { name: '添加工单反馈来源' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '添加反馈源' })).toBeVisible()
   await page.getByRole('button', { name: '取消' }).click()
 
   await page.getByRole('button', { name: '流水线', exact: true }).click()
@@ -149,8 +149,8 @@ test('@visual first-run ledger asks for a source instead of claiming standby', a
   await expect(page).toHaveScreenshot('tasks-first-run-light.png', { fullPage: true })
 
   // 两步都指向真实去处
-  await page.getByRole('listitem').filter({ hasText: '接入工单反馈来源' }).getByRole('button').click()
-  await expect(page.getByRole('heading', { name: '工单反馈来源', exact: true })).toBeVisible()
+  await page.getByRole('listitem').filter({ hasText: '接入反馈源' }).getByRole('button').click()
+  await expect(page.getByRole('heading', { name: '反馈源', exact: true })).toBeVisible()
 })
 
 test('@visual configuration and responsive surfaces', async ({ page }) => {

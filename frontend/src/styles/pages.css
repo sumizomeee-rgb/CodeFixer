@@ -344,20 +344,20 @@
 .provider-type-switch button.selected > span { border-color: var(--signal); background: var(--signal); color: #fff; }
 
 /* Settings control ledger */
-.control-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: start; gap: 16px; }
-.control-card { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 21px 22px 22px 25px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
-.control-card::before { position: absolute; inset: -1px auto -1px -1px; width: 4px; border-radius: var(--r-sm) 0 0 var(--r-sm); background: var(--line-strong); content: ""; }
-.settings-mode::before { background: var(--signal); }
-.settings-agents::before { background: var(--reconcile); }
-.concurrency-card::before { background: var(--nochange); }
-.settings-environment::before { background: var(--success); }
+/* stretch + 主控件贴底：四张卡的开关/下拉/加减器落在同一条水平线上，形成第二条对齐轴 */
+.control-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); align-items: stretch; gap: 16px; }
+.control-card { position: relative; display: flex; flex-direction: column; min-height: 0; padding: 21px 22px 22px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+/* 主控件整组贴底：从卡片说明文字之后的第一个元素起，全部压到底部。
+   03/04 卡的主控件由多块组成（加减器+刻度尺 / 摘要+依赖表），
+   所以推的是「p 之后的那一块」而不是 :last-child，否则组内会被拉裂。 */
+.control-card > p + * { margin-top: auto; }
 .control-card > header { display: flex; align-items: center; gap: 11px; min-height: 40px; }
 .control-card > header > div { flex: 1; }
 .control-card > header small { color: var(--tertiary); font: 600 10px/1 var(--font-mono); letter-spacing: .14em; }
 .control-card > header h2 { margin-top: 4px; }
-.card-index { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line-strong); color: var(--text); font: 600 10px/1 var(--font-mono); }
+.card-index { display: grid; place-items: center; width: 36px; height: 36px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); color: var(--text); font: 600 10px/1 var(--font-mono); }
 .control-card > p { min-height: auto; margin: 15px 0 18px; font-size: 12px; }
-.mode-callout { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border-block: 1px solid var(--line); background: var(--surface-2); }
+.mode-callout { display: flex; align-items: center; gap: 12px; padding: 13px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
 .mode-callout i { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 5px color-mix(in srgb,var(--warning) 12%,transparent); }
 .mode-callout.automatic i { background: var(--success); box-shadow: 0 0 0 5px color-mix(in srgb,var(--success) 12%,transparent); }
 .mode-callout b,
@@ -395,13 +395,8 @@
 .capacity-scale > span { color: var(--tertiary); font-size: 10px; }
 .capacity-scale > span.active { color: var(--nochange); font-weight: 600; }
 .capacity-scale > i { height: 1px; background: var(--line); }
-.readiness-summary { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 0; border-block: 1px solid var(--line); }
-.readiness-summary strong { font-size: 13px; }
-.readiness-summary strong.ready { color: var(--success); }
-.readiness-summary strong.warning { color: var(--warning); }
-.readiness-summary strong.not_ready { color: var(--failed); }
-.readiness-summary span { color: var(--tertiary); font-size: 10px; }
-.dependency-grid { display: grid; }
+.dependency-grid { display: grid; padding-top: 3px; border-top: 1px solid var(--line); }
+.dependency-grid.is-checking { opacity: .5; }
 .dependency-row { display: grid; grid-template-columns: 8px minmax(0,1fr) auto; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--line); }
 .dependency-row > i { width: 7px; height: 7px; border-radius: 50%; background: var(--line-strong); }
 .dependency-row.ready > i { background: var(--success); }
@@ -414,6 +409,21 @@
 .dependency-row small code { display: block; margin-top: 2px; color: var(--tertiary); font-size: 10px; }
 .dependency-row > span { color: var(--tertiary); font-size: 10px; }
 .all-clear { padding: 15px 0 3px; color: var(--muted); font-size: 11px; }
+
+/* 加载骨架：只占位，不做动画。设置页四张卡的形状本身就是稳定的，
+   闪一下再变形比等一下更糟。 */
+.card-skeleton > header small,
+.card-skeleton > header h2,
+.card-skeleton > p,
+.skeleton-control,
+.skeleton-text { border-radius: 3px; background: var(--surface-2); }
+.card-skeleton > header small { width: 68px; height: 9px; }
+.card-skeleton > header h2 { width: 96px; height: 17px; margin-top: 6px; }
+.card-skeleton > p { width: 82%; height: 11px; }
+.skeleton-control { margin-top: auto; height: 76px; }
+.skeleton-text { display: block; height: 9px; }
+.dependency-row b.skeleton-text { width: 104px; }
+.dependency-row small.skeleton-text { width: 62px; }
 
 @keyframes drawerIn { from { opacity: 0; transform: translateX(26px); } }
 @keyframes stepIn { from { opacity: 0; transform: translateY(6px); } }
