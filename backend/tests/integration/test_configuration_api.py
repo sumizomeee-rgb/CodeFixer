@@ -72,6 +72,27 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert rejected.status_code == 422
         assert "不支持 gitlabPush" in rejected.json()["error"]["message"]
 
+        legacy_project = {
+            **project,
+            "name": "Legacy Web Client",
+            "modificationWorkspace": {
+                "path": str(repository),
+                "allowedRoots": ["."],
+                "deniedRoots": [],
+                "allowedExtensions": [],
+            },
+        }
+        migrated = client.post(
+            "/api/projects",
+            json=legacy_project,
+            headers={"If-Match": created.json()["etag"]},
+        )
+        assert migrated.status_code == 201
+        migrated_workspace = migrated.json()["project"]["modificationWorkspace"]
+        assert migrated_workspace["locationType"] == "local"
+        assert migrated_workspace["localPath"] == str(repository.resolve())
+        assert "path" not in migrated_workspace
+
 
 def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: Path, monkeypatch):
     test_client, _ = _client(tmp_path, monkeypatch)
