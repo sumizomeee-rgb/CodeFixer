@@ -128,7 +128,7 @@ export function ProjectsPage() {
       checks:[],
     } : null)
   }
-  const closeEditor = () => { setEditor(null); setEditingId(null); setDetection(null); setVersions([]); setVersionLoad('idle'); setVersionError('') }
+  const closeEditor = () => { setEditor(null); setEditingId(null); setDetection(null); setVersions([]); setVersionLoad('idle'); setVersionError(''); setError('') }
   const updateRule = (patch:Partial<NonNullable<ProjectConfig['routingRules']>[number]>) => setEditor(current => current ? {...current,routingRules:[{...firstRule(current),...patch}]} : current)
   const setVersionMode = (mode:'all'|'selected') => updateRule({versionFilter:{mode,versions:mode === 'selected' ? versionFilter.versions : []}})
   const toggleVersion = (version:ProviderVersion) => {
@@ -140,12 +140,14 @@ export function ProjectsPage() {
   const changeWorkspaceLocation = (locationType:WorkspaceLocationType) => {
     if (!editor) return
     setDetection(null)
+    setError('')
     setEditor({...editor,modificationWorkspace:{id:'modification-workspace',locationType,localPath:locationType === 'local' ? '' : undefined,remoteUrl:locationType === 'remote' ? '' : undefined,allowedRoots:editor.modificationWorkspace?.allowedRoots ?? ['.'],deniedRoots:editor.modificationWorkspace?.deniedRoots ?? [],allowedExtensions:editor.modificationWorkspace?.allowedExtensions ?? []},finalActions:actions.filter(item => item.type === 'patch')})
   }
   const updateWorkspaceLocation = (value:string) => {
     const locationType = editor?.modificationWorkspace?.locationType ?? 'local'
     updateWorkspace({localPath:locationType === 'local' ? value : undefined,remoteUrl:locationType === 'remote' ? value : undefined,vcsKind:'unknown',hostingKind:'none',webBaseUrl:undefined})
     setDetection(null)
+    setError('')
   }
   const updateDeliveryLog = (patch:Partial<NonNullable<ProjectConfig['deliveryLog']>>) => editor && setEditor({...editor,deliveryLog:{...deliveryLog,...patch}})
   const setAction = (action:FinalActionConfig) => editor && setEditor({...editor,finalActions:[...actions.filter(item => item.type !== action.type),action]})
@@ -213,7 +215,7 @@ export function ProjectsPage() {
 
   return <section className="page-stack project-page">
     <div className="page-heading"><div><span className="page-kicker">REPAIR PIPELINES</span><h1>流水线</h1><p>把工单、定位资料、修改工程与交付出口连成一条修复线路。</p></div><button className="primary compact" onClick={() => openEditor()}>新增流水线</button></div>
-    {error && <button className="notice-strip error-note" onClick={() => setError('')}>{error}</button>}
+    {!editor && error && <button className="notice-strip error-note" onClick={() => setError('')}>{error}</button>}
 
     {projects.length === 0 ? <div className="empty-state project-empty"><span className="empty-symbol"><svg viewBox="0 0 36 36"><path d="M8 9h20v18H8z"/><path d="M13 5v8M23 5v8M5 15h6M25 15h6M13 22h10"/></svg></span><h2>建立第一条修复通道</h2><p>从一个工单反馈来源开始，再告诉 CodeFixer 去哪里理解问题、修改哪份工程，以及最终如何交付。</p><button className="primary compact" onClick={() => openEditor()}>开始配置</button></div> :
       <div className="project-grid refined-project-grid">{projects.map(project => {
@@ -239,6 +241,7 @@ export function ProjectsPage() {
         </nav>
 
         <div className="workbench-body">
+          {error && <button type="button" className="workbench-error" onClick={() => setError('')}><StatusIcon status="failed"/><span><b>当前步骤未完成</b><small>{error}</small></span><i aria-hidden="true">×</i></button>}
           {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单进入哪条线</h3><p>反馈源负责收取正文；流水线规则决定由哪套定位、修改和交付策略处理。</p></div></div>
             <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value,versionFilter:{mode:'all',versions:[]}})}><option value="">选择 Redmine / TAPD 来源</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
             {route.providerRef && <section className="version-filter" aria-labelledby="version-filter-title"><header><div><b id="version-filter-title">接收版本</b><small>按工单的合入版本 / 修复版本筛选，不需要填写字段名。</small></div>{versionLoad === 'loading' && <span className="version-load-state">正在读取…</span>}</header>

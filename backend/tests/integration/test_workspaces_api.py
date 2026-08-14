@@ -93,3 +93,15 @@ def test_detect_workspace__omits_unavailable_optional_metadata(tmp_path: Path, m
     assert response.json()["ready"] is False
     assert "repositoryRoot" not in response.json()
     assert "remoteUrl" not in response.json()
+
+
+def test_detect_workspace__accepts_legacy_path_request(tmp_path: Path, monkeypatch):
+    plain_directory = tmp_path / "plain"
+    plain_directory.mkdir()
+    with _client(tmp_path, monkeypatch) as client:
+        response = client.post("/api/workspaces/detect", json={"path": str(plain_directory)})
+
+    assert response.status_code == 200
+    assert response.json()["locationType"] == "local"
+    assert response.json()["location"] == str(plain_directory.resolve())
+    assert response.json()["path"] == str(plain_directory.resolve())

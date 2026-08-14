@@ -73,7 +73,7 @@ def create_app(loaded_config: LoadedConfig | None = None, *, start_background: b
         index = loaded.frontend_dist / "index.html"
         if not index.is_file():
             raise HTTPException(status_code=503, detail="Frontend build is unavailable")
-        return FileResponse(index)
+        return FileResponse(index, headers={"Cache-Control": "no-store"})
 
     return app
 

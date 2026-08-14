@@ -191,6 +191,15 @@
     linear-gradient(#000 0 0) bottom / 100% 32px local no-repeat,
     linear-gradient(transparent, #000 28px, #000 calc(100% - 32px), transparent) scroll;
 }
+.workbench-error { display: grid; grid-template-columns: 30px minmax(0,1fr) auto; align-items: center; gap: 11px; width: 100%; margin: 0 0 18px; padding: 11px 13px; border: 1px solid color-mix(in srgb,var(--failed) 45%,var(--line)); border-radius: var(--r-sm); background: color-mix(in srgb,var(--failed) 8%,var(--surface)); color: var(--text); text-align: left; }
+.workbench-error:hover { border-color: var(--failed); background: color-mix(in srgb,var(--failed) 12%,var(--surface)); }
+.workbench-error .detect-icon { width: 26px; height: 26px; }
+.workbench-error span,
+.workbench-error b,
+.workbench-error small { display: block; }
+.workbench-error b { font-size: 12px; }
+.workbench-error small { margin-top: 3px; color: var(--failed); font-size: 11px; }
+.workbench-error i { color: var(--tertiary); font-style: normal; font-size: 16px; }
 .step-panel { animation: stepIn var(--standard) var(--ease); }
 .step-intro { display: grid; grid-template-columns: 42px 1fr; gap: 14px; margin-bottom: 26px; }
 .step-intro > span { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line-strong); color: var(--signal); font: 600 12px/1 var(--font-mono); }

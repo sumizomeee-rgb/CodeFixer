@@ -39,6 +39,7 @@ def test_health_and_readiness__when_phase0_runtime_is_valid(tmp_path: Path):
         page = client.get("/")
         assert page.status_code == 200
         assert "CodeFixer" in page.text
+        assert page.headers["Cache-Control"] == "no-store"
 
 
 def test_readiness__missing_unused_dependency_is_inactive(tmp_path: Path):

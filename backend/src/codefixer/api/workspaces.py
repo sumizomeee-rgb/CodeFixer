@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, model_validator
 
 from codefixer.application.services.workspace_detection import detect_workspace
 
@@ -14,8 +14,15 @@ router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 
 class DetectWorkspaceBody(BaseModel):
-    locationType: Literal["local", "remote"]
-    location: str = Field(min_length=1)
+    locationType: Literal["local", "remote"] | None = None
+    location: str | None = None
+    path: str | None = None
+
+    @model_validator(mode="after")
+    def validate_location(self) -> DetectWorkspaceBody:
+        if not (self.location or self.path or "").strip():
+            raise ValueError("location 或 path 至少需要填写一个")
+        return self
 
 
 class WorkspaceCheckResponse(BaseModel):
@@ -35,6 +42,7 @@ class WorkspaceDetectionResponse(BaseModel):
     remoteUrl: str | None = None
     summary: str
     checks: list[WorkspaceCheckResponse]
+    path: str | None = None
 
 
 class BrowseDirectoriesBody(BaseModel):
@@ -55,7 +63,12 @@ class DirectoryListingResponse(BaseModel):
 
 @router.post("/detect", response_model=WorkspaceDetectionResponse, response_model_exclude_none=True)
 def detect_workspace_route(body: DetectWorkspaceBody) -> dict[str, object]:
-    return detect_workspace(body.location, location_type=body.locationType)
+    legacy_request = body.location is None and body.path is not None
+    location = (body.location or body.path or "").strip()
+    result = detect_workspace(location, location_type=body.locationType or "local")
+    if legacy_request:
+        result["path"] = result["location"]
+    return result
 
 
 def _filesystem_roots() -> list[Path]:
