@@ -127,6 +127,8 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
             return httpx.Response(200, json={"status": 1, "data": [{"BugChange": {"id": "h1", "field": "status"}}]})
         if request.url.path == "/bugs/get_link_bugs":
             return httpx.Response(200, json={"status": 1, "data": [{"id": "1010000000000000002", "type": "direct_relate"}]})
+        if request.url.path == "/iterations":
+            return httpx.Response(200, json={"status": 1, "data": []})
         raise AssertionError(request.url)
 
     client = httpx.Client(base_url="https://api.tapd.cn", transport=httpx.MockTransport(handler), auth=httpx.BasicAuth("u", "p"))
@@ -144,15 +146,16 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
 
 def test_tapd_provider__lists_workspace_versions():
     def handler(request: httpx.Request) -> httpx.Response:
-        assert request.url.path == "/versions"
+        assert request.url.path == "/iterations"
         assert request.url.params["workspace_id"] == "101"
+        assert request.url.params["status"] == "open"
         return httpx.Response(
             200,
             json={
                 "status": 1,
                 "data": [
-                    {"Version": {"id": "v41", "name": "4.7"}},
-                    {"Version": {"id": "v42", "name": "4.8"}},
+                    {"Iteration": {"id": "i74", "name": "【战双2.0】【v7.4】"}},
+                    {"Iteration": {"id": "i49", "name": "【v4.9】正式迭代"}},
                 ],
             },
         )
@@ -164,6 +167,13 @@ def test_tapd_provider__lists_workspace_versions():
         client,
     )
     assert provider.list_versions() == [
-        {"id": "v41", "name": "4.7"},
-        {"id": "v42", "name": "4.8"},
+        {"id": "7.4", "name": "7.4"},
+        {"id": "4.9", "name": "4.9"},
     ]
+
+
+def test_tapd_provider__infers_requirement_version_like_haru_analyze():
+    assert TapdTicketProvider._requirement_version(
+        {"title": "【战双兄弟2.0】【v4.7、trunk】修复", "version_report": "4.8review"},
+        "【v4.9】当前迭代",
+    ) == "4.7"

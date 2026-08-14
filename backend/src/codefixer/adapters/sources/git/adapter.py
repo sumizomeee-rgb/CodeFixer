@@ -23,14 +23,12 @@ class GitSourceAdapter(CliSourceBase):
 
     def refresh_and_current_revision(self) -> str:
         """Refresh origin before a BaselineCohort freezes one shared revision."""
-        fetched = self._run(
+        self._run(
             ["fetch", "--prune", "origin"],
             cwd=self.repository_path,
             timeout=600,
-            allow_failure=True,
+            env={"GIT_TERMINAL_PROMPT": "0"},
         )
-        if fetched.exit_code != 0:
-            return self.current_revision()
         branch = self._run(
             ["symbolic-ref", "--quiet", "--short", "HEAD"],
             cwd=self.repository_path,
@@ -44,7 +42,28 @@ class GitSourceAdapter(CliSourceBase):
             ).stdout.strip()
             if remote:
                 return remote
-        return self.current_revision()
+            is_bare = self._run(
+                ["rev-parse", "--is-bare-repository"],
+                cwd=self.repository_path,
+                allow_failure=True,
+            ).stdout.strip()
+            if is_bare == "true":
+                mirror_revision = self._run(
+                    ["rev-parse", "--verify", f"refs/heads/{branch}^{{commit}}"],
+                    cwd=self.repository_path,
+                    allow_failure=True,
+                ).stdout.strip()
+                if mirror_revision:
+                    return mirror_revision
+            raise SourceCommandError(f"git origin does not contain current branch: {branch}")
+        remote_head = self._run(
+            ["rev-parse", "--verify", "refs/remotes/origin/HEAD^{commit}"],
+            cwd=self.repository_path,
+            allow_failure=True,
+        ).stdout.strip()
+        if remote_head:
+            return remote_head
+        raise SourceCommandError("git origin has no resolvable authoritative branch")
 
     def prepare(
         self,

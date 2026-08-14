@@ -17,7 +17,7 @@
         "git-cli": { "command": ["git"] }
       },
       "ticketProviders": [
-        { "id": "Haru TAPD", "type": "tapd", "enabled": true, "workspaceId": "45286624", "pollIntervalSeconds": 60 }
+        { "id": "provider-haru-tapd", "name": "Haru TAPD", "type": "tapd", "enabled": true, "workspaceId": "45286624", "pollIntervalSeconds": 60 }
       ],
       "agentProfiles": [
         { "id": "claude-haiku", "runtime": "claudeCode", "executableRef": "claude-code-cli", "model": "claude-haiku-4-5", "timeoutSeconds": 1800 }
@@ -28,9 +28,9 @@
           "id": "client-lua",
           "name": "客户端 Lua 修复通道",
           "enabled": true,
-          "routingRules": [{ "id": "primary-route", "providerRef": "Haru TAPD", "priority": 100, "catchAll": true, "conditions": [], "versionFilter": { "mode": "all", "versions": [] } }],
+          "routingRules": [{ "id": "primary-route", "providerRef": "provider-haru-tapd", "priority": 100, "catchAll": true, "conditions": [], "versionFilter": { "mode": "all", "versions": [] } }],
           "localizationSource": { "id": "localization-source", "type": "directory", "path": "E:\\Knowledge\\Client", "readOnly": true },
-          "modificationWorkspace": { "id": "modification-workspace", "path": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "repositoryRoot": "E:\\Repos\\Client", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
+          "modificationWorkspace": { "id": "modification-workspace", "locationType": "local", "localPath": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
           "deliveryLog": { "technologyTag": "Lua", "submitterName": "黄永熙" },
           "verification": { "timeoutSeconds": 1200, "steps": [], "allowNoAutomatedTests": true, "reason": "演示夹具" },
           "finalActions": [
@@ -56,17 +56,17 @@
     ]
   },
   "providers": [
-    { "id": "Haru TAPD", "type": "tapd", "enabled": true, "workspaceId": "45286624" },
-    { "id": "研发 Redmine", "type": "redmine", "enabled": true, "baseUrl": "https://redmine.example.com" }
+    { "id": "provider-haru-tapd", "name": "Haru TAPD", "type": "tapd", "enabled": true, "workspaceId": "45286624" },
+    { "id": "provider-dev-redmine", "name": "研发 Redmine", "type": "redmine", "enabled": true, "baseUrl": "https://redmine.example.com" }
   ],
   "projects": [
     {
       "id": "client-lua",
       "name": "客户端 Lua 修复通道",
       "enabled": true,
-      "routingRules": [{ "id": "primary-route", "providerRef": "Haru TAPD", "priority": 100, "catchAll": true, "conditions": [], "versionFilter": { "mode": "all", "versions": [] } }],
+      "routingRules": [{ "id": "primary-route", "providerRef": "provider-haru-tapd", "priority": 100, "catchAll": true, "conditions": [], "versionFilter": { "mode": "all", "versions": [] } }],
       "localizationSource": { "id": "localization-source", "type": "directory", "path": "E:\\Knowledge\\Client", "readOnly": true },
-      "modificationWorkspace": { "id": "modification-workspace", "path": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "repositoryRoot": "E:\\Repos\\Client", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
+      "modificationWorkspace": { "id": "modification-workspace", "locationType": "local", "localPath": "E:\\Repos\\Client", "vcsKind": "git", "hostingKind": "gitlab", "remoteUrl": "git@gitlab.example.com:game/client.git", "webBaseUrl": "https://gitlab.example.com", "allowedRoots": ["."], "deniedRoots": [] },
       "deliveryLog": { "technologyTag": "Lua", "submitterName": "黄永熙" },
       "verification": { "timeoutSeconds": 1200, "steps": [], "allowNoAutomatedTests": true, "reason": "演示夹具" },
       "finalActions": [
@@ -81,7 +81,7 @@
       "project_id": "client-lua",
       "status": "running",
       "result": null,
-      "provider_instance_id": "Haru TAPD",
+      "provider_instance_id": "provider-haru-tapd",
       "external_ticket_id": "248625",
       "title": "【4.7】【商城】购买礼包后偶现红点未刷新",
       "current_run_id": "run-running",
@@ -120,7 +120,7 @@
       "project_id": "client-lua",
       "status": "failed",
       "result": null,
-      "provider_instance_id": "Haru TAPD",
+      "provider_instance_id": "provider-haru-tapd",
       "external_ticket_id": "248612",
       "title": "【4.7】【登录】弱网重连后角色列表偶发为空",
       "current_run_id": "run-failed",
@@ -167,7 +167,7 @@
       "project_id": "client-lua",
       "status": "completed",
       "result": "no_change",
-      "provider_instance_id": "Haru TAPD",
+      "provider_instance_id": "provider-haru-tapd",
       "external_ticket_id": "248590",
       "title": "【4.7】【背包】空物品格仍显示旧品质边框",
       "current_run_id": "run-no-change",

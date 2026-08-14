@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import codefixer.application.services.workspace_detection as workspace_detection
 from codefixer.application.services.workspace_detection import available_final_actions, detect_workspace, sanitize_remote_url
 
 
@@ -21,12 +22,26 @@ def git(cwd: Path, *args: str) -> None:
         ("ssh://git@example.test/company/project.git", "other", {"patch"}),
     ],
 )
-def test_detect_git_workspace__derives_hosting_and_actions(tmp_path: Path, remote: str, hosting: str, actions: set[str]):
+def test_detect_git_workspace__derives_hosting_and_actions(
+    tmp_path: Path,
+    monkeypatch,
+    remote: str,
+    hosting: str,
+    actions: set[str],
+):
     repository = tmp_path / "repository"
     nested = repository / "src" / "feature"
     nested.mkdir(parents=True)
     git(repository, "init", "-q")
     git(repository, "remote", "add", "origin", remote)
+    original_run = workspace_detection._run
+
+    def connected_remote(command: list[str], *, cwd: Path, timeout: int = 10):
+        if command[:2] == ["git", "ls-remote"]:
+            return subprocess.CompletedProcess(command, 0, "ref: refs/heads/main\tHEAD\nabc\tHEAD\n", "")
+        return original_run(command, cwd=cwd, timeout=timeout)
+
+    monkeypatch.setattr(workspace_detection, "_run", connected_remote)
 
     result = detect_workspace(str(nested))
 
@@ -36,6 +51,90 @@ def test_detect_git_workspace__derives_hosting_and_actions(tmp_path: Path, remot
     assert result["repositoryRoot"] == str(repository.resolve())
     assert result["remoteUrl"] == remote
     assert available_final_actions(result) == actions
+
+
+def test_detect_git_workspace__only_reads_origin_when_worktree_is_dirty(tmp_path: Path, monkeypatch):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-q")
+    git(repository, "remote", "add", "origin", "git@github.com:company/project.git")
+    (repository / "untracked.txt").write_text("dirty\n", encoding="utf-8")
+    original_run = workspace_detection._run
+
+    def connected_remote(command: list[str], *, cwd: Path, timeout: int = 10):
+        if command[:2] == ["git", "ls-remote"]:
+            return subprocess.CompletedProcess(command, 0, "ref: refs/heads/main\tHEAD\nabc\tHEAD\n", "")
+        return original_run(command, cwd=cwd, timeout=timeout)
+
+    monkeypatch.setattr(workspace_detection, "_run", connected_remote)
+
+    result = detect_workspace(str(repository), location_type="local")
+
+    assert result["ready"] is True
+    assert result["locationType"] == "local"
+    assert result["location"] == str(repository.resolve())
+    assert result["remoteUrl"] == "git@github.com:company/project.git"
+
+
+def test_detect_remote_git_repository(tmp_path: Path):
+    remote = tmp_path / "remote.git"
+    seed = tmp_path / "seed"
+    remote.mkdir()
+    git(remote, "init", "--bare", "-q")
+    seed.mkdir()
+    git(seed, "init", "-q")
+    subprocess.run(["git", "-C", str(seed), "config", "user.email", "test@codefixer.local"], check=True)
+    subprocess.run(["git", "-C", str(seed), "config", "user.name", "CodeFixer Test"], check=True)
+    (seed / "app.py").write_text("value = 1\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(seed), "add", "."], check=True)
+    subprocess.run(["git", "-C", str(seed), "commit", "-m", "initial"], check=True, capture_output=True)
+    subprocess.run(["git", "-C", str(seed), "push", remote.as_uri(), "HEAD:main"], check=True, capture_output=True)
+    subprocess.run(["git", "--git-dir", str(remote), "symbolic-ref", "HEAD", "refs/heads/main"], check=True)
+
+    result = detect_workspace(remote.as_uri(), location_type="remote")
+
+    assert result["ready"] is True
+    assert result["locationType"] == "remote"
+    assert result["location"] == remote.as_uri()
+    assert result["remoteUrl"] == remote.as_uri()
+    assert result["vcsKind"] == "git"
+    assert "repositoryRoot" not in result
+
+
+def test_detect_git_workspace__rejects_missing_authoritative_origin(tmp_path: Path):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-q")
+
+    result = detect_workspace(str(repository), location_type="local")
+
+    assert result["ready"] is False
+    assert "remoteUrl" not in result
+    assert any(check["id"] == "workspace.remote" and check["status"] == "failed" for check in result["checks"])
+
+
+def test_detect_git_workspace__sanitizes_unreachable_origin_diagnostics(tmp_path: Path, monkeypatch):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init", "-q")
+    secret_remote = "https://oauth2:secret@example.test/company/project.git"
+    git(repository, "remote", "add", "origin", secret_remote)
+    original_run = workspace_detection._run
+
+    def unreachable_remote(command: list[str], *, cwd: Path, timeout: int = 10):
+        if command[:2] == ["git", "ls-remote"]:
+            return subprocess.CompletedProcess(command, 128, "", f"fatal: repository '{secret_remote}' not found")
+        return original_run(command, cwd=cwd, timeout=timeout)
+
+    monkeypatch.setattr(workspace_detection, "_run", unreachable_remote)
+
+    result = detect_workspace(str(repository), location_type="local")
+    serialized = repr(result)
+
+    assert result["ready"] is False
+    assert result["remoteUrl"] == "https://example.test/company/project.git"
+    assert "secret" not in serialized
+    assert "oauth2" not in serialized
 
 
 def test_detect_workspace__rejects_plain_directory(tmp_path: Path):
@@ -65,4 +164,19 @@ def test_detect_svn_workspace(tmp_path: Path):
     assert result["vcsKind"] == "svn"
     assert result["hostingKind"] == "none"
     assert result["repositoryRoot"] == str(working_copy.resolve())
+    assert result["remoteUrl"] == remote.as_uri()
     assert available_final_actions(result) == {"patch"}
+
+
+@pytest.mark.skipif(shutil.which("svn") is None or shutil.which("svnadmin") is None, reason="SVN CLI 不可用")
+def test_detect_remote_svn_repository(tmp_path: Path):
+    remote = tmp_path / "remote"
+    subprocess.run(["svnadmin", "create", str(remote)], check=True, capture_output=True)
+
+    result = detect_workspace(remote.as_uri(), location_type="remote")
+
+    assert result["ready"] is True
+    assert result["locationType"] == "remote"
+    assert result["remoteUrl"] == remote.as_uri()
+    assert result["vcsKind"] == "svn"
+    assert "repositoryRoot" not in result

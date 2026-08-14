@@ -6,7 +6,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ServerSettings(BaseModel):
@@ -41,6 +41,22 @@ class AppConfig(BaseModel):
     knowledgeProviders: list[dict[str, Any]] = []
     executableBindings: dict[str, dict[str, Any]] = {}
     projects: list[dict[str, Any]] = []
+
+    @field_validator("ticketProviders")
+    @classmethod
+    def validate_ticket_providers(cls, providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        ids: set[str] = set()
+        for provider in providers:
+            provider_id = str(provider.get("id", "")).strip()
+            name = str(provider.get("name", "")).strip()
+            if not provider_id.startswith("provider-"):
+                raise ValueError("反馈源必须使用系统生成的 provider-* 内部标识")
+            if not name:
+                raise ValueError("反馈源必须具有独立的展示名称")
+            if provider_id in ids:
+                raise ValueError(f"反馈源内部标识重复：{provider_id}")
+            ids.add(provider_id)
+        return providers
 
 
 class LoadedConfig(BaseModel):

@@ -14,7 +14,8 @@ router = APIRouter(prefix="/api/workspaces", tags=["workspaces"])
 
 
 class DetectWorkspaceBody(BaseModel):
-    path: str = Field(min_length=1)
+    locationType: Literal["local", "remote"]
+    location: str = Field(min_length=1)
 
 
 class WorkspaceCheckResponse(BaseModel):
@@ -25,7 +26,8 @@ class WorkspaceCheckResponse(BaseModel):
 
 
 class WorkspaceDetectionResponse(BaseModel):
-    path: str
+    locationType: Literal["local", "remote"]
+    location: str
     ready: bool
     vcsKind: Literal["git", "svn", "unknown"]
     hostingKind: Literal["gitlab", "github", "other", "none", "ambiguous"]
@@ -53,7 +55,7 @@ class DirectoryListingResponse(BaseModel):
 
 @router.post("/detect", response_model=WorkspaceDetectionResponse, response_model_exclude_none=True)
 def detect_workspace_route(body: DetectWorkspaceBody) -> dict[str, object]:
-    return detect_workspace(body.path)
+    return detect_workspace(body.location, location_type=body.locationType)
 
 
 def _filesystem_roots() -> list[Path]:

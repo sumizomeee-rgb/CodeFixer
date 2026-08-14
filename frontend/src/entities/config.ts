@@ -3,10 +3,11 @@ export type AgentRuntime = 'claudeCode' | 'codex' | 'opencode'
 export type RoutingOperator = 'eq' | 'neq' | 'contains' | 'in' | 'exists'
 export type VcsKind = 'git' | 'svn' | 'unknown'
 export type HostingKind = 'gitlab' | 'github' | 'other' | 'none' | 'ambiguous'
+export type WorkspaceLocationType = 'local' | 'remote'
 
 export type ExecutableBinding = { command?: string[]; versionArgs?: string[]; versionConstraint?: string | null; versionRegex?: string }
 export type AgentProfileConfig = { id:string; runtime:AgentRuntime; executableRef:string; model?:string; effort?:string; timeoutSeconds?:number; maxBudgetUsd?:number; extraArgs?:string[] }
-export type TicketProviderConfig = Record<string, unknown> & { id:string; type:'redmine'|'tapd'; enabled?:boolean; pollIntervalSeconds?:number }
+export type TicketProviderConfig = Record<string, unknown> & { id:string; name:string; type:'redmine'|'tapd'; enabled?:boolean; pollIntervalSeconds?:number }
 export type ProviderVersion = { id:string; name:string }
 export type VersionFilter = { mode:'all'|'selected'; versions:ProviderVersion[] }
 export type RoutingRule = { id:string; providerRef:string; priority:number; catchAll?:boolean; conditions?:Array<{field:string;operator:RoutingOperator;value?:unknown}>; versionFilter?:VersionFilter }
@@ -21,10 +22,10 @@ export type LocalizationSourceConfig = {
 
 export type ModificationWorkspaceConfig = {
   id:string
-  path:string
+  locationType:WorkspaceLocationType
+  localPath?:string
   vcsKind?:VcsKind
   hostingKind?:HostingKind
-  repositoryRoot?:string
   remoteUrl?:string
   webBaseUrl?:string
   allowedRoots?:string[]
@@ -69,7 +70,8 @@ export type PreflightResult={projectId:string;ready:boolean;status:'ready'|'not_
 export type ReadinessCheck={id:string;status:'ready'|'warning'|'failed'|'inactive';summary:string;detail?:unknown;suggestion?:string;dependencyId?:string;required?:boolean;command?:string;path?:string;version?:string|null}
 export type ReadinessResponse={ready:boolean;status:'ready'|'warning'|'not_ready';checks:ReadinessCheck[];environment:string}
 export type WorkspaceDetection={
-  path:string
+  locationType:WorkspaceLocationType
+  location:string
   ready:boolean
   vcsKind:VcsKind
   hostingKind:HostingKind

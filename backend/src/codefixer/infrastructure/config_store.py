@@ -150,6 +150,26 @@ class ConfigStore:
                 return dict(project)
         return None
 
+    def create_provider(self, provider: dict[str, Any]) -> LoadedConfig:
+        provider_id = str(provider.get("id", "")).strip()
+        if not provider_id:
+            raise ValueError("反馈源内部标识不能为空")
+        if any(str(item.get("id")) == provider_id for item in self._loaded.config.ticketProviders):
+            raise KeyError(provider_id)
+        payload = self._loaded.config.model_dump(mode="json")
+        payload["ticketProviders"].append(provider)
+        return self.replace_effective(AppConfig.model_validate(payload))
+
+    def update_provider(self, provider_id: str, provider: dict[str, Any]) -> LoadedConfig:
+        payload = self._loaded.config.model_dump(mode="json")
+        for index, item in enumerate(payload["ticketProviders"]):
+            if str(item.get("id")) == provider_id:
+                updated = dict(provider)
+                updated["id"] = provider_id
+                payload["ticketProviders"][index] = updated
+                return self.replace_effective(AppConfig.model_validate(payload))
+        raise KeyError(provider_id)
+
     def list_secrets(self) -> dict[str, dict[str, bool]]:
         raw = _read_json(self._secrets_path)
         secrets = raw.get("secrets", {})

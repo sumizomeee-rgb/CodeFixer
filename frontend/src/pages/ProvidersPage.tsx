@@ -17,10 +17,10 @@ export function ProvidersPage() {
   const [editingId,setEditingId] = useState<string|null>(null)
   const [connectionStates,setConnectionStates] = useState<Record<string,ConnectionState>>({})
   const [type,setType] = useState<ProviderType>('redmine')
-  const [id,setId] = useState('')
+  const [name,setName] = useState('')
   const [baseUrl,setBaseUrl] = useState('')
   const [workspaceId,setWorkspaceId] = useState('')
-  const [authMode,setAuthMode] = useState<AuthMode>('basic')
+  const [authMode,setAuthMode] = useState<AuthMode>('oauth')
   const [secretA,setSecretA] = useState('')
   const [secretB,setSecretB] = useState('')
 
@@ -40,10 +40,10 @@ export function ProvidersPage() {
     })
   },[])
 
-  const reset = () => { setShow(false); setEditingId(null); setType('redmine'); setId(''); setBaseUrl(''); setWorkspaceId(''); setAuthMode('basic'); setSecretA(''); setSecretB('') }
+  const reset = () => { setShow(false); setEditingId(null); setType('redmine'); setName(''); setBaseUrl(''); setWorkspaceId(''); setAuthMode('oauth'); setSecretA(''); setSecretB('') }
   const openNew = () => { reset(); setShow(true) }
   const openEdit = (provider:TicketProviderConfig) => {
-    setEditingId(provider.id); setType(provider.type); setId(provider.id)
+    setEditingId(provider.id); setType(provider.type); setName(provider.name)
     setBaseUrl(stringField(provider.baseUrl)); setWorkspaceId(stringField(provider.workspaceId))
     const auth = provider.auth && typeof provider.auth === 'object' ? provider.auth as Record<string,unknown> : {}
     setAuthMode(auth.mode === 'oauth' ? 'oauth' : 'basic'); setSecretA(''); setSecretB(''); setShow(true)
@@ -57,42 +57,30 @@ export function ProvidersPage() {
     finally { setBusy('') }
   }
   const save = async () => {
-    if (!settings || !id) return
+    if (!settings || !name) return
     const existing = editingId ? settings.config.ticketProviders.find(item => item.id === editingId) : undefined
-    const secretPrefix = `provider-${encodeURIComponent(id)}`
-    const existingAuth = existing?.auth && typeof existing.auth === 'object' ? existing.auth as Record<string,unknown> : {}
-    const provider:TicketProviderConfig = type === 'redmine' ? {
-      ...existing,id,type,enabled:existing?.enabled ?? true,baseUrl,
-      apiKeySecretRef:stringField(existing?.apiKeySecretRef) || `${secretPrefix}-api-key`,
+    const provider = type === 'redmine' ? {
+      ...existing,name,type,enabled:existing?.enabled ?? true,baseUrl,
       pollIntervalSeconds:Number(existing?.pollIntervalSeconds ?? 60),
     } : {
-      ...existing,id,type,enabled:existing?.enabled ?? true,workspaceId,
-      auth:authMode === 'basic' ? {
-        mode:'basic',
-        usernameSecretRef:stringField(existingAuth.usernameSecretRef) || `${secretPrefix}-username`,
-        passwordSecretRef:stringField(existingAuth.passwordSecretRef) || `${secretPrefix}-password`,
-      } : {mode:'oauth',tokenSecretRef:stringField(existingAuth.tokenSecretRef) || `${secretPrefix}-token`},
+      ...existing,name,type,enabled:existing?.enabled ?? true,workspaceId,
+      auth:{mode:authMode},
       pollIntervalSeconds:Number(existing?.pollIntervalSeconds ?? 60),
     }
-    const nextProviders = editingId ? settings.config.ticketProviders.map(item => item.id === editingId ? provider : item) : [...settings.config.ticketProviders,provider]
     try {
       setBusy('save')
-      if (type === 'redmine' && secretA) await api.setSecret(stringField(provider.apiKeySecretRef),secretA)
-      if (type === 'tapd') {
-        const auth = provider.auth as Record<string,unknown>
-        if (authMode === 'basic') {
-          if (secretA) await api.setSecret(stringField(auth.usernameSecretRef),secretA)
-          if (secretB) await api.setSecret(stringField(auth.passwordSecretRef),secretB)
-        } else if (secretA) await api.setSecret(stringField(auth.tokenSecretRef),secretA)
-      }
-      const next = await api.putSettings({...settings.config,ticketProviders:nextProviders},settings.etag)
-      setSettings(next); reset(); await load()
+      const secrets:Record<string,string> = type === 'redmine' ? {apiKey:secretA} : authMode === 'basic' ? {username:secretA,password:secretB} : {token:secretA}
+      const result = editingId
+        ? await api.updateProvider(editingId,provider as TicketProviderConfig,secrets,settings.etag)
+        : await api.createProvider(provider as Omit<TicketProviderConfig,'id'>,secrets,settings.etag)
+      const providerId = result.provider.id
+      reset(); await load()
       try {
-        await api.testProvider(provider.id)
-        setConnectionStates(value => ({...value,[provider.id]:'ready'}))
+        await api.testProvider(providerId)
+        setConnectionStates(value => ({...value,[providerId]:'ready'}))
         setNotice(editingId ? '反馈源配置已更新，连接正常' : '反馈源已保存，连接正常')
       } catch (e) {
-        setConnectionStates(value => ({...value,[provider.id]:'failed'}))
+        setConnectionStates(value => ({...value,[providerId]:'failed'}))
         const reason = e instanceof Error ? e.message : '连接测试失败'
         setNotice(`反馈源已保存，但${reason}`)
       }
@@ -108,8 +96,17 @@ export function ProvidersPage() {
       const connectionState = connectionStates[provider.id]
       const health = provider.enabled === false ? 'inactive' : connectionState ?? 'unknown'
       const descriptor = provider.type === 'redmine' ? stringField(provider.baseUrl) : `Workspace ${stringField(provider.workspaceId)}`
-      return <article className="provider-card provider-channel" data-health={health} key={provider.id}><div className={`provider-monogram ${provider.type}`}><span>{provider.type === 'tapd' ? 'T' : 'R'}</span></div><div className="provider-body"><small>{provider.type === 'tapd' ? 'TAPD' : 'REDMINE'}</small><h2>{provider.id}</h2><code>{descriptor || '尚未填写服务信息'}</code><div className="provider-meta"><span><i className={health === 'ready' ? 'ready-dot' : health === 'failed' ? 'failed-dot' : ''}/>{health === 'ready' ? '连接正常' : health === 'failed' ? '连接失败' : health === 'inactive' ? '已停用' : '已配置 · 待验证'}</span></div></div><div className="provider-actions"><button className="ghost action-link" onClick={() => openEdit(provider)}>编辑</button><button className="ghost framed" disabled={!!busy} onClick={() => void testConnection(provider.id)}>{busy === `test:${provider.id}` ? '测试中…' : '测试连接'}</button></div></article>
+      return <article className="provider-card provider-channel" data-health={health} key={provider.id}><div className={`provider-monogram ${provider.type}`}><span>{provider.type === 'tapd' ? 'T' : 'R'}</span></div><div className="provider-body"><small>{provider.type === 'tapd' ? 'TAPD' : 'REDMINE'}</small><h2>{provider.name}</h2><code>{descriptor || '尚未填写服务信息'}</code><div className="provider-meta"><span><i className={health === 'ready' ? 'ready-dot' : health === 'failed' ? 'failed-dot' : ''}/>{health === 'ready' ? '连接正常' : health === 'failed' ? '连接失败' : health === 'inactive' ? '已停用' : '已配置 · 待验证'}</span></div></div><div className="provider-actions"><button className="ghost action-link" onClick={() => openEdit(provider)}>编辑</button><button className="ghost framed" disabled={busy === `test:${provider.id}`} onClick={() => void testConnection(provider.id)}>{busy === `test:${provider.id}` ? '测试中…' : '测试连接'}</button></div></article>
     })}</div>}
-    {show && <div className="modal-backdrop"><div className="config-modal provider-editor" role="dialog" aria-modal="true"><div className="modal-head"><div><small className="modal-kicker">TICKET PROVIDER</small><h2>{editingId ? '编辑反馈源' : '添加反馈源'}</h2><p>账号、密码和 Token 不会写进项目配置，也不会被页面回显。</p></div><button className="icon-btn" onClick={reset} aria-label="关闭">×</button></div><div className="provider-type-switch"><button className={type === 'redmine' ? 'selected' : ''} disabled={!!editingId} onClick={() => setType('redmine')}><span>R</span><div><b>Redmine</b><small>API Key 登录</small></div></button><button className={type === 'tapd' ? 'selected' : ''} disabled={!!editingId} onClick={() => setType('tapd')}><span>T</span><div><b>TAPD</b><small>账号密码或 Token</small></div></button></div><div className="form-grid polished-form"><label>反馈源名称<input value={id} disabled={!!editingId} onChange={e => setId(e.target.value)} placeholder="例如：公司缺陷库"/></label>{type === 'redmine' ? <><label>服务地址<input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://redmine.example.com"/></label><label className="span-field">API Key<input type="password" value={secretA} onChange={e => setSecretA(e.target.value)} placeholder={editingId ? '已保存；留空表示不更换' : '输入 Redmine API Key'}/></label></> : <><label>工作区 ID<input value={workspaceId} onChange={e => setWorkspaceId(e.target.value)} placeholder="10101010"/></label><label>登录方式<select value={authMode} onChange={e => setAuthMode(e.target.value as AuthMode)}><option value="basic">账号密码</option><option value="oauth">Access Token</option></select></label>{authMode === 'basic' ? <><label>账号<input value={secretA} onChange={e => setSecretA(e.target.value)} placeholder={editingId ? '已保存；留空不更换' : ''} autoComplete="username"/></label><label>密码<input type="password" value={secretB} onChange={e => setSecretB(e.target.value)} placeholder={editingId ? '已保存；留空不更换' : ''} autoComplete="current-password"/></label></> : <label className="span-field">Access Token<input type="password" value={secretA} onChange={e => setSecretA(e.target.value)} placeholder={editingId ? '已保存；留空不更换' : '输入 TAPD Token'}/></label>}</>}</div><div className="secret-boundary-note"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M5 10h14v10H5z"/></svg><div><b>本机私密存储</b><span>保存后界面只知道“已配置”，无法读回真实值。</span></div></div><div className="modal-actions"><button className="ghost" onClick={reset}>取消</button><button className="primary compact" disabled={!!busy || !id || (type === 'redmine' && !baseUrl) || (type === 'tapd' && !workspaceId) || secretRequired} onClick={() => void save()}>{busy === 'save' ? '保存中…' : editingId ? '保存更改' : '保存反馈源'}</button></div></div></div>}
+    {show && <div className="modal-backdrop"><div className="config-modal provider-editor" role="dialog" aria-modal="true"><div className="modal-head"><div><small className="modal-kicker">TICKET PROVIDER</small><h2>{editingId ? '编辑反馈源' : '添加反馈源'}</h2><p>账号、密码和 Token 不会写进项目配置，也不会被页面回显。</p></div><button className="icon-btn" onClick={reset} aria-label="关闭">×</button></div>{editingId
+      /* 编辑态类型不可改，两个按钮此时唯一的作用是「告诉你这是个什么源」，纯信息展示。
+         继续渲染成 disabled 按钮会吃到全局 opacity:.46，等于把这条信息压到读不清，
+         而且 66px 双列的体量也对不上它的实际权重。换成一条只读身份条。 */
+      ? <div className="provider-type-static"><span className={`provider-monogram ${type}`}>{type === 'tapd' ? 'T' : 'R'}</span><div><b>{type === 'tapd' ? 'TAPD' : 'Redmine'}</b><small>{type === 'tapd' ? '账号密码或 Token' : 'API Key 登录'}</small></div><em>类型创建后不可更改</em></div>
+      : <div className="provider-type-switch"><button className={type === 'redmine' ? 'selected' : ''} onClick={() => setType('redmine')}><span>R</span><div><b>Redmine</b><small>API Key 登录</small></div></button><button className={type === 'tapd' ? 'selected' : ''} onClick={() => setType('tapd')}><span>T</span><div><b>TAPD</b><small>账号密码或 Token</small></div></button></div>}<div className="form-grid polished-form"><label>反馈源名称<input value={name} onChange={e => setName(e.target.value)} placeholder="例如：公司缺陷库"/></label>{type === 'redmine' ? <><label>服务地址<input value={baseUrl} onChange={e => setBaseUrl(e.target.value)} placeholder="https://redmine.example.com"/></label><label className="span-field">API Key<input type="password" value={secretA} onChange={e => setSecretA(e.target.value)} placeholder={editingId ? '已保存；留空表示不更换' : '输入 Redmine API Key'}/></label></> : <><label>工作区 ID<input value={workspaceId} onChange={e => setWorkspaceId(e.target.value)} placeholder="10101010"/></label><label>登录方式<select value={authMode} onChange={e => setAuthMode(e.target.value as AuthMode)}><option value="basic">账号密码</option><option value="oauth">Access Token</option></select></label>{authMode === 'basic' ? /* 账号和密码是一对，原来被拆成「登录方式|账号」「密码|空」两行的对角布局。
+        包成整行子栅格后读作三组：身份 / 登录方式 / 凭据，登录方式右边那格空白正好当分组间隔。 */
+        <div className="credential-pair"><label>账号<input value={secretA} onChange={e => setSecretA(e.target.value)} placeholder={editingId ? '已保存；留空不更换' : ''} autoComplete="username"/></label><label>密码<input type="password" value={secretB} onChange={e => setSecretB(e.target.value)} placeholder={editingId ? '已保存；留空不更换' : ''} autoComplete="current-password"/></label></div> : /* 不跨列：跨列会在「登录方式」右边留一个 325px 的空洞，
+        自己再拉通两列，栅格节奏断成两截。补进同一行即可填平。 */
+        <label>Access Token<input type="password" value={secretA} onChange={e => setSecretA(e.target.value)} placeholder={editingId ? '已保存；留空不更换' : '输入 TAPD Token'}/></label>}</>}</div><div className="secret-boundary-note"><svg viewBox="0 0 24 24"><path d="M7 10V8a5 5 0 0 1 10 0v2M5 10h14v10H5z"/></svg><div><b>本机私密存储</b><span>保存后界面只知道“已配置”，无法读回真实值。</span></div></div><div className="modal-actions"><button className="ghost" onClick={reset}>取消</button><button className="primary compact" disabled={!!busy || !name || (type === 'redmine' && !baseUrl) || (type === 'tapd' && !workspaceId) || secretRequired} onClick={() => void save()}>{busy === 'save' ? '保存中…' : editingId ? '保存更改' : '保存反馈源'}</button></div></div></div>}
   </section>
 }

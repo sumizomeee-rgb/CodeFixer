@@ -264,7 +264,8 @@ class CohortSourceAdapter:
         )
 
     def current_revision(self) -> str:
-        return str(self.source.current_revision())
+        # 修改源的稳定性以权威远端为准；本地缓存的 HEAD 可能故意保持不动。
+        return str(self.baseline_resolver())
 
     def prepare(
         self,

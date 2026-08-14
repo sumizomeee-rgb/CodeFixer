@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from pathlib import Path
 from typing import Any
@@ -24,6 +25,7 @@ from codefixer.application.ports.delivery import FinalAction, FrozenDeliveryCont
 from codefixer.application.ports.sources import ModificationSourceAdapter, SourcePolicy
 from codefixer.application.services.baseline_cohorts import BaselineCohortCoordinator, CohortSourceAdapter
 from codefixer.application.services.delivery import DeliveryCoordinator
+from codefixer.application.services.git_repository_cache import ensure_git_repository
 from codefixer.application.services.llm_slots import LeasedAgentRuntime, LlmSlotPool
 from codefixer.application.services.preflight import run_project_preflight
 from codefixer.application.services.stability import PreDeliveryStabilityGuard
@@ -33,7 +35,6 @@ from codefixer.config import LoadedConfig
 from codefixer.infrastructure.artifact_index import ArtifactIndex
 from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.delivery_store import DeliveryStore
-from codefixer.infrastructure.leases import LeaseStore
 from codefixer.infrastructure.task_store import TaskStore
 from codefixer.orchestration.pipeline import ChangedPipeline, PipelineResult
 from codefixer.protocols import ArtifactStore, SchemaRegistry
@@ -81,17 +82,22 @@ class RunExecutor:
     def _execute_fresh(self, run_id: str, tasks: TaskStore, loaded: LoadedConfig, project: dict[str, Any], run_summary: dict[str, Any], database_path: Path) -> PipelineResult:
         project_id = str(project.get("id", ""))
         source_config = dict(project.get("modificationWorkspace") or {})
-        repository_value = str(source_config.get("repositoryRoot") or source_config.get("path") or "")
-        repository = Path(repository_value).resolve() if repository_value else None
-        if repository is None or not repository.is_dir():
+        remote_url = str(source_config.get("remoteUrl") or "").strip()
+        if not remote_url:
             raise ConfigurationNotReady(project_id, [])
         source_type = str(source_config.get("vcsKind"))
         executable_ref = "git-cli" if source_type == "git" else "svn-cli"
         source_command = self._command(loaded.config.executableBindings, executable_ref)
         if source_type == "git":
+            repository = ensure_git_repository(
+                remote_url,
+                loaded.data_root / "source-cache" / "git",
+                source_command,
+            )
             raw_source: ModificationSourceAdapter = GitSourceAdapter(repository, source_command)
         elif source_type == "svn":
-            raw_source = SvnSourceAdapter(repository, source_command, LeaseStore(self.connection))
+            repository = loaded.data_root / "source-cache" / "svn" / hashlib.sha256(remote_url.encode("utf-8")).hexdigest()
+            raw_source = SvnSourceAdapter(None, source_command, remote_url=remote_url, baseline_source="remote")
         else:
             raise ConfigurationNotReady(project_id, [])
         cohort = BaselineCohortCoordinator(
@@ -102,7 +108,7 @@ class RunExecutor:
             raw_source,
             cohort,
             repository_root=repository,
-            baseline_identity=str(source_config.get("remoteUrl") or repository),
+            baseline_identity=remote_url,
             baseline_resolver=(
                 raw_source.refresh_and_current_revision
                 if isinstance(raw_source, (GitSourceAdapter, SvnSourceAdapter))
@@ -122,7 +128,7 @@ class RunExecutor:
         if localization_detection.get("vcsKind") == "git":
             localization_source: ModificationSourceAdapter = GitSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "git-cli"))
         elif localization_detection.get("vcsKind") == "svn":
-            localization_source = SvnSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "svn-cli"), LeaseStore(self.connection))
+            localization_source = SvnSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "svn-cli"), baseline_source="working_copy")
         else:
             localization_source = DirectoryReadOnlySourceAdapter(localization_path)
 
@@ -247,10 +253,10 @@ class RunExecutor:
                 actions.append(PatchFinalAction(action_id=action_id, action_version=1, store=delivery_store, output_directory=output, overwrite=bool(action.get("overwrite", False))))
             elif action.get("type") == "gitlabPush":
                 workspace = dict(project.get("modificationWorkspace") or {})
-                materialization_value = str(workspace.get("repositoryRoot") or workspace.get("path") or "")
-                materialization = Path(materialization_value).resolve() if materialization_value else None
-                if materialization is None or not materialization.is_dir():
+                remote_url = str(workspace.get("remoteUrl") or "").strip()
+                if not remote_url:
                     raise ValueError(f"GitLab repository missing for {action_id}")
+                materialization = ensure_git_repository(remote_url, loaded.data_root / "source-cache" / "git", self._command(loaded.config.executableBindings, "git-cli"))
                 materializer = GitDeliveryMaterializer(materialization, self._command(loaded.config.executableBindings, "git-cli"))
                 web_base_url = str(workspace.get("webBaseUrl") or "").strip()
                 if not web_base_url:
@@ -258,10 +264,10 @@ class RunExecutor:
                 actions.append(GitLabPushFinalAction(action_id=action_id, action_version=1, store=delivery_store, materializer=materializer, config=action, work_root=loaded.data_root / "delivery-work", web_base_url=web_base_url))
             elif action.get("type") == "githubPr":
                 workspace = dict(project.get("modificationWorkspace") or {})
-                materialization_value = str(workspace.get("repositoryRoot") or workspace.get("path") or "")
-                materialization = Path(materialization_value).resolve() if materialization_value else None
-                if materialization is None or not materialization.is_dir():
+                remote_url = str(workspace.get("remoteUrl") or "").strip()
+                if not remote_url:
                     raise ValueError(f"GitHub repository missing for {action_id}")
+                materialization = ensure_git_repository(remote_url, loaded.data_root / "source-cache" / "git", self._command(loaded.config.executableBindings, "git-cli"))
                 materializer = GitHubDeliveryMaterializer(materialization, self._command(loaded.config.executableBindings, "git-cli"))
                 github = GitHubCli(materialization, self._command(loaded.config.executableBindings, "gh-cli"))
                 targets = tuple(str(item) for item in (action.get("targetBranches") or []))

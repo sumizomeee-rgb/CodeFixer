@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import re
 from typing import Any
 
 import httpx
@@ -9,6 +10,23 @@ from codefixer.application.ports.tickets import TicketBatch
 from codefixer.domain.tasks import IngestedTicket
 
 SecretGetter = Callable[[str], str | None]
+
+_VERSION = re.compile(r"(?<![\d.])[vV]?(?P<major>\d{1,2})\.(?P<minor>\d{1,2})(?![\d.])")
+_PREFIXED_VERSION = re.compile(r"(?<![A-Za-z0-9.])[vV](?P<major>\d{1,2})\.(?P<minor>\d{1,2})(?![\d.])")
+_TAGGED_VERSION = re.compile(
+    r"(?:^|[【\[,，、/])\s*[vV]?(?P<major>\d{1,2})\.(?P<minor>\d{1,2})"
+    r"(?=\s*(?:[】\],，、/]|review\b|xf\b|trunk\b))",
+    re.IGNORECASE,
+)
+
+
+def _versions_from_text(value: object, pattern: re.Pattern[str]) -> list[str]:
+    values = {
+        (int(match.group("major")), int(match.group("minor")))
+        for match in pattern.finditer(str(value or ""))
+        if 1 <= int(match.group("major")) <= 20
+    }
+    return [f"{major}.{minor}" for major, minor in sorted(values)]
 
 
 class TapdTicketProvider:
@@ -66,19 +84,48 @@ class TapdTicketProvider:
         return {"ready": isinstance(payload.get("data"), list), "providerId": self.provider_id}
 
     def list_versions(self) -> list[dict[str, str]]:
-        versions = self._paged_objects(
-            "/versions", "Version", {"workspace_id": self.workspace_id}
+        iterations = self._paged_objects(
+            "/iterations",
+            "Iteration",
+            {
+                "workspace_id": self.workspace_id,
+                "status": "open",
+                "fields": "id,name,status,startdate,enddate",
+            },
         )
         result: list[dict[str, str]] = []
         seen: set[str] = set()
-        for version in versions:
-            version_id = str(version.get("id") or "").strip()
-            name = str(version.get("name") or "").strip()
-            if not version_id or not name or version_id in seen:
-                continue
-            seen.add(version_id)
-            result.append({"id": version_id, "name": name})
-        return result
+        for iteration in iterations:
+            for name in _versions_from_text(iteration.get("name"), _PREFIXED_VERSION):
+                if name in seen:
+                    continue
+                seen.add(name)
+                result.append({"id": name, "name": name})
+        return sorted(result, key=lambda item: tuple(map(int, item["name"].split("."))), reverse=True)
+
+    def _iteration_names(self) -> dict[str, str]:
+        try:
+            iterations = self._paged_objects(
+                "/iterations",
+                "Iteration",
+                {"workspace_id": self.workspace_id, "fields": "id,name"},
+            )
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code in {403, 404}:
+                return {}
+            raise
+        return {
+            str(item.get("id") or ""): str(item.get("name") or "")
+            for item in iterations
+            if item.get("id")
+        }
+
+    @staticmethod
+    def _requirement_version(bug: dict[str, Any], iteration_name: str) -> str | None:
+        candidates = _versions_from_text(bug.get("title"), _TAGGED_VERSION)
+        candidates.extend(_versions_from_text(bug.get("version_report"), _VERSION))
+        candidates.extend(_versions_from_text(iteration_name, _PREFIXED_VERSION))
+        return sorted(set(candidates), key=lambda value: tuple(map(int, value.split("."))))[0] if candidates else None
 
     def _paged_objects(
         self, path: str, root_key: str, params: dict[str, object]
@@ -127,6 +174,7 @@ class TapdTicketProvider:
 
     def poll(self, cursor: str | None) -> TicketBatch:
         bugs = self._paged_objects("/bugs", "Bug", {"workspace_id": self.workspace_id})
+        iteration_names = self._iteration_names()
         ineligible_statuses = {str(value) for value in self.config.get("ineligibleStatuses", [])}
         tickets: list[IngestedTicket] = []
         newest = cursor
@@ -138,7 +186,8 @@ class TapdTicketProvider:
                 newest = modified
             bug_id = str(bug["id"])
             enriched = self._enrich(bug_id)
-            fix_version_name = str(bug.get("version_fix") or "").strip()
+            iteration_name = iteration_names.get(str(bug.get("iteration_id") or ""), "")
+            requirement_version = self._requirement_version(bug, iteration_name)
             payload: dict[str, object] = {
                 "provider": "tapd",
                 "providerInstanceId": self.provider_id,
@@ -154,7 +203,9 @@ class TapdTicketProvider:
                 "priority": bug.get("priority_label") or bug.get("priority"),
                 "versionReport": bug.get("version_report"),
                 "versionFix": bug.get("version_fix"),
-                "fixVersion": {"name": fix_version_name} if fix_version_name else None,
+                "fixVersion": {"name": requirement_version} if requirement_version else None,
+                "requirementVersion": requirement_version,
+                "iteration": iteration_name or None,
                 **enriched,
                 "raw": bug,
             }

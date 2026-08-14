@@ -11,6 +11,7 @@ import type {
   SettingsResponse,
   VerificationStepConfig,
   WorkspaceDetection,
+  WorkspaceLocationType,
 } from '../entities/config'
 import { ApiError, api } from '../lib/api'
 
@@ -22,7 +23,7 @@ const emptyProject = (): ProjectConfig => ({
   enabled: true,
   routingRules: [{ id: 'primary-route', providerRef: '', priority: 100, catchAll: true, conditions: [], versionFilter: {mode:'all',versions:[]} }],
   localizationSource: { id: 'localization-source', type: 'directory', path: '', readOnly: true },
-  modificationWorkspace: { id: 'modification-workspace', path: '', allowedRoots: ['.'], deniedRoots: [], allowedExtensions: [] },
+  modificationWorkspace: { id: 'modification-workspace', locationType: 'local', localPath: '', allowedRoots: ['.'], deniedRoots: [], allowedExtensions: [] },
   verification: { timeoutSeconds: 1200, steps: [], allowNoAutomatedTests: false, reason: '' },
   deliveryLog: { technologyTag:'Lua', submitterName:'' },
   finalActions: [],
@@ -72,7 +73,7 @@ export function ProjectsPage() {
   }
   useEffect(() => { void reload().catch(e => setError(e instanceof Error ? e.message : '加载失败')) }, [])
 
-  const providerIds = useMemo(() => settings?.config.ticketProviders.map(item => item.id).filter(Boolean) ?? [],[settings])
+  const providers = useMemo(() => settings?.config.ticketProviders.filter(item => item.id) ?? [],[settings])
   const executableIds = useMemo(() => Object.keys(settings?.config.executableBindings ?? {}),[settings])
   const route = editor ? firstRule(editor) : null
   const versionFilter = route?.versionFilter ?? {mode:'all' as const,versions:[]}
@@ -116,11 +117,11 @@ export function ProjectsPage() {
     setError('')
     const workspace = next.modificationWorkspace
     setDetection(workspace?.vcsKind ? {
-      path:workspace.path,
+      locationType:workspace.locationType,
+      location:workspace.locationType === 'remote' ? workspace.remoteUrl ?? '' : workspace.localPath ?? '',
       ready:workspace.vcsKind !== 'unknown',
       vcsKind:workspace.vcsKind,
       hostingKind:workspace.hostingKind ?? 'none',
-      repositoryRoot:workspace.repositoryRoot,
       remoteUrl:workspace.remoteUrl,
       webBaseUrl:workspace.webBaseUrl,
       summary:'已保存的识别结果',
@@ -135,7 +136,17 @@ export function ProjectsPage() {
     updateRule({versionFilter:{mode:'selected',versions:selected ? versionFilter.versions.filter(item => item.id !== version.id) : [...versionFilter.versions,version]}})
   }
   const updateLocalization = (patch:Partial<NonNullable<ProjectConfig['localizationSource']>>) => editor && setEditor({...editor,localizationSource:{id:'localization-source',path:'',readOnly:true,...editor.localizationSource,...patch}})
-  const updateWorkspace = (patch:Partial<NonNullable<ProjectConfig['modificationWorkspace']>>) => editor && setEditor({...editor,modificationWorkspace:{id:'modification-workspace',path:'',...editor.modificationWorkspace,...patch}})
+  const updateWorkspace = (patch:Partial<NonNullable<ProjectConfig['modificationWorkspace']>>) => editor && setEditor({...editor,modificationWorkspace:{id:'modification-workspace',locationType:'local',localPath:'',...editor.modificationWorkspace,...patch}})
+  const changeWorkspaceLocation = (locationType:WorkspaceLocationType) => {
+    if (!editor) return
+    setDetection(null)
+    setEditor({...editor,modificationWorkspace:{id:'modification-workspace',locationType,localPath:locationType === 'local' ? '' : undefined,remoteUrl:locationType === 'remote' ? '' : undefined,allowedRoots:editor.modificationWorkspace?.allowedRoots ?? ['.'],deniedRoots:editor.modificationWorkspace?.deniedRoots ?? [],allowedExtensions:editor.modificationWorkspace?.allowedExtensions ?? []},finalActions:actions.filter(item => item.type === 'patch')})
+  }
+  const updateWorkspaceLocation = (value:string) => {
+    const locationType = editor?.modificationWorkspace?.locationType ?? 'local'
+    updateWorkspace({localPath:locationType === 'local' ? value : undefined,remoteUrl:locationType === 'remote' ? value : undefined,vcsKind:'unknown',hostingKind:'none',webBaseUrl:undefined})
+    setDetection(null)
+  }
   const updateDeliveryLog = (patch:Partial<NonNullable<ProjectConfig['deliveryLog']>>) => editor && setEditor({...editor,deliveryLog:{...deliveryLog,...patch}})
   const setAction = (action:FinalActionConfig) => editor && setEditor({...editor,finalActions:[...actions.filter(item => item.type !== action.type),action]})
   const toggleAction = (type:FinalActionConfig['type']) => {
@@ -144,16 +155,18 @@ export function ProjectsPage() {
     else setAction(type === 'patch' ? patchDefault() : type === 'gitlabPush' ? pushDefault() : prDefault())
   }
   const detect = async () => {
-    const path = editor?.modificationWorkspace?.path.trim()
-    if (!path) return
+    const workspace = editor?.modificationWorkspace
+    const locationType = workspace?.locationType ?? 'local'
+    const location = (locationType === 'remote' ? workspace?.remoteUrl : workspace?.localPath)?.trim()
+    if (!location) return
     setBusy('detect'); setError('')
     try {
-      const result = await api.detectWorkspace(path)
+      const result = await api.detectWorkspace(locationType,location)
       setDetection(result)
-      updateWorkspace({path:result.path,vcsKind:result.vcsKind,hostingKind:result.hostingKind,repositoryRoot:result.repositoryRoot,remoteUrl:result.remoteUrl,webBaseUrl:result.webBaseUrl})
+      updateWorkspace({locationType:result.locationType,localPath:result.locationType === 'local' ? result.location : undefined,remoteUrl:result.remoteUrl,vcsKind:result.vcsKind,hostingKind:result.hostingKind,webBaseUrl:result.webBaseUrl})
       if (result.hostingKind !== 'gitlab' && gitlabPush) setEditor(current => current ? {...current,finalActions:(current.finalActions??[]).filter(item => item.type !== 'gitlabPush')} : current)
       if (result.hostingKind !== 'github' && pr) setEditor(current => current ? {...current,finalActions:(current.finalActions??[]).filter(item => item.type !== 'githubPr')} : current)
-    } catch (e) { setDetection(null); setError(e instanceof Error ? e.message : '无法识别目录') }
+    } catch (e) { setDetection(null); setError(e instanceof Error ? e.message : '无法识别修改源') }
     finally { setBusy('') }
   }
   const save = async () => {
@@ -190,12 +203,13 @@ export function ProjectsPage() {
   const stepComplete = {
     1:Boolean(editor?.name?.trim() && route?.providerRef && (versionFilter.mode === 'all' || versionFilter.versions.length > 0)),
     2:Boolean(editor?.localizationSource?.path),
-    3:Boolean(editor?.modificationWorkspace?.path && detection?.ready),
+    3:Boolean((editor?.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace.remoteUrl : editor?.modificationWorkspace?.localPath) && detection?.ready),
     4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
   }
   const canSave = stepComplete[1] && stepComplete[2] && stepComplete[3] && stepComplete[4]
   const next = () => setStep(value => Math.min(4,value + 1) as Step)
   const sourceLabel = (project:ProjectConfig) => project.modificationWorkspace?.vcsKind?.toUpperCase() ?? '未识别'
+  const sourceLocation = (project:ProjectConfig) => project.modificationWorkspace?.remoteUrl || project.modificationWorkspace?.localPath || '未配置'
 
   return <section className="page-stack project-page">
     <div className="page-heading"><div><span className="page-kicker">REPAIR PIPELINES</span><h1>流水线</h1><p>把工单、定位资料、修改工程与交付出口连成一条修复线路。</p></div><button className="primary compact" onClick={() => openEditor()}>新增流水线</button></div>
@@ -207,7 +221,7 @@ export function ProjectsPage() {
         const projectActions = project.finalActions ?? []
         return <article className="project-card project-ledger-card" data-health={pf?.ready ? 'ready' : pf ? 'failed' : project.enabled === false ? 'inactive' : 'unknown'} key={project.id}>
           <header><div><small>修复流水线</small><h2>{project.name || '未命名流水线'}</h2></div><span className={`readiness-badge ${pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
-          <div className="project-path-story"><div><span>定位资料</span><b>{project.localizationSource?.path || '未配置'}</b></div><i/><div><span>修改工程 · {sourceLabel(project)}</span><b>{project.modificationWorkspace?.path || '未配置'}</b></div></div>
+          <div className="project-path-story"><div><span>定位资料</span><b>{project.localizationSource?.path || '未配置'}</b></div><i/><div><span>修改工程 · {sourceLabel(project)}</span><b>{sourceLocation(project)}</b></div></div>
           <div className="delivery-tags">{projectActions.length ? projectActions.map(item => <span key={item.id}>{labelForAction(item)}</span>) : <span className="muted-tag">未配置交付</span>}</div>
           {pf && !pf.ready && <div className="preflight-issue">{pf.checks.find(item => item.status === 'failed')?.summary ?? '配置尚未就绪'}</div>}
           <footer><button className="ghost action-link" onClick={() => openEditor(project)}>编辑配置</button><button className="ghost framed" disabled={!!busy} onClick={() => void preflight(project.id)}>{busy === `preflight:${project.id}` ? '检查中…' : '运行体检'}</button></footer>
@@ -215,7 +229,7 @@ export function ProjectsPage() {
       })}</div>}
 
     {editor && settings && route && <div className="modal-backdrop editor-backdrop"><div className="config-modal project-workbench" role="dialog" aria-modal="true" aria-labelledby="project-editor-title">
-      <header className="workbench-head"><div><small>PIPELINE WORKBENCH</small><h2 id="project-editor-title">{editingId ? '编辑流水线' : '新增流水线'}</h2><p>四步完成配置。路径均指 CodeFixer 部署机上的本地目录。</p></div><button className="icon-btn" onClick={closeEditor} aria-label="关闭">×</button></header>
+      <header className="workbench-head"><div><small>PIPELINE WORKBENCH</small><h2 id="project-editor-title">{editingId ? '编辑流水线' : '新增流水线'}</h2><p>四步完成配置。修改源既可来自部署机本地仓库，也可直接连接远端仓库。</p></div><button className="icon-btn" onClick={closeEditor} aria-label="关闭">×</button></header>
       <div className="workbench-layout">
         <nav className="project-stepper" aria-label="流水线配置步骤">
           <StepMark number={1} current={step} complete={stepComplete[1]} title="工单反馈" detail="问题从哪里进入" onClick={() => setStep(1)}/>
@@ -226,14 +240,14 @@ export function ProjectsPage() {
 
         <div className="workbench-body">
           {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单进入哪条线</h3><p>反馈源负责收取正文；流水线规则决定由哪套定位、修改和交付策略处理。</p></div></div>
-            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value,versionFilter:{mode:'all',versions:[]}})}><option value="">选择 Redmine / TAPD 来源</option>{providerIds.map(id => <option key={id}>{id}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
+            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value,versionFilter:{mode:'all',versions:[]}})}><option value="">选择 Redmine / TAPD 来源</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
             {route.providerRef && <section className="version-filter" aria-labelledby="version-filter-title"><header><div><b id="version-filter-title">接收版本</b><small>按工单的合入版本 / 修复版本筛选，不需要填写字段名。</small></div>{versionLoad === 'loading' && <span className="version-load-state">正在读取…</span>}</header>
               <div className="version-mode-switch"><button type="button" className={versionFilter.mode === 'all' ? 'selected' : ''} aria-pressed={versionFilter.mode === 'all'} onClick={() => setVersionMode('all')}><span className="choice-check">{versionFilter.mode === 'all' ? '✓' : ''}</span><div><b>全部版本</b><small>默认；也接收尚未填写修复版本的工单</small></div></button><button type="button" className={versionFilter.mode === 'selected' ? 'selected' : ''} aria-pressed={versionFilter.mode === 'selected'} disabled={versionLoad !== 'ready' || versions.length === 0} onClick={() => setVersionMode('selected')}><span className="choice-check">{versionFilter.mode === 'selected' ? '✓' : ''}</span><div><b>指定版本</b><small>{versionLoad === 'ready' && versions.length > 0 ? `从 ${versions.length} 个可用版本中多选` : '读取版本后可选'}</small></div></button></div>
               {versionLoad === 'failed' && <div className="version-load-error"><span>{versionError}</span><button type="button" className="ghost action-link" onClick={() => setVersionRetry(value => value + 1)}>重试</button></div>}
               {versionLoad === 'ready' && versions.length === 0 && <div className="version-empty">当前反馈源没有可选版本。“全部版本”仍会正常接收工单。</div>}
               {versionFilter.mode === 'selected' && versions.length > 0 && <div className="version-options" aria-label="指定接收版本">{versions.map(version => { const checked = versionFilter.versions.some(item => item.id === version.id); return <label className={checked ? 'selected' : ''} key={version.id}><input type="checkbox" checked={checked} onChange={() => toggleVersion(version)}/><span>{version.name}</span></label> })}</div>}
             </section>}
-            {providerIds.length === 0 && <div className="soft-warning">还没有可选反馈源。请先到“反馈源”连接 Redmine 或 TAPD。</div>}
+            {providers.length === 0 && <div className="soft-warning">还没有可选反馈源。请先到“反馈源”连接 Redmine 或 TAPD。</div>}
           </div>}
 
           {step === 2 && <div className="step-panel"><div className="step-intro"><span>02</span><div><h3>为问题定位提供足够线索</h3><p>这是只读的辅助资料，可以是日志、分析工程或代码仓库；它不等于最终会被修改的工程。</p></div></div>
@@ -241,13 +255,14 @@ export function ProjectsPage() {
             <div className="source-separation"><div><b>定位源</b><span>负责理解“问题在哪里”</span></div><svg viewBox="0 0 80 20"><path d="M2 10h70m-8-7 8 7-8 7"/></svg><div><b>修改工程</b><span>负责回答“代码改在哪里”</span></div></div>
           </div>}
 
-          {step === 3 && <div className="step-panel"><div className="step-intro"><span>03</span><div><h3>选择实际落代码的工程</h3><p>无需手选仓库类型。平台会检查目录、识别 Git/SVN，并读取 origin 判断托管平台。</p></div></div>
-            <label className="path-field"><span>修改工程路径</span><div><input value={editor.modificationWorkspace?.path ?? ''} onChange={e => {updateWorkspace({path:e.target.value,vcsKind:'unknown',hostingKind:'none',repositoryRoot:undefined,remoteUrl:undefined,webBaseUrl:undefined});setDetection(null)}} placeholder={String.raw`例如：/srv/repos/client 或 E:\WorkProject\Client`}/><button className="primary compact path-detect-button" disabled={busy === 'detect' || !editor.modificationWorkspace?.path.trim()} onClick={() => void detect()}>{busy === 'detect' ? '识别中…' : '识别目录'}</button></div><small>这里的“本地”指运行 CodeFixer 服务的机器；换机后在新机器重新配置即可。</small></label>
+          {step === 3 && <div className="step-panel"><div className="step-intro"><span>03</span><div><h3>选择实际落代码的工程</h3><p>只需提供一个入口。平台识别 Git/SVN 后，以远端仓库为权威并为每个任务创建独立目录。</p></div></div>
+            <div className="workspace-location-switch" role="group" aria-label="修改源入口类型"><button type="button" className={(editor.modificationWorkspace?.locationType ?? 'local') === 'local' ? 'selected' : ''} aria-pressed={(editor.modificationWorkspace?.locationType ?? 'local') === 'local'} onClick={() => changeWorkspaceLocation('local')}><b>部署机本地仓库</b><small>从现有仓库读取远端地址</small></button><button type="button" className={editor.modificationWorkspace?.locationType === 'remote' ? 'selected' : ''} aria-pressed={editor.modificationWorkspace?.locationType === 'remote'} onClick={() => changeWorkspaceLocation('remote')}><b>远端仓库 URL</b><small>无需预先 clone 到本机</small></button></div>
+            <label className="path-field"><span>{editor.modificationWorkspace?.locationType === 'remote' ? 'Git / SVN 远端仓库 URL' : '部署机本地仓库路径'}</span><div><input value={editor.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace?.remoteUrl ?? '' : editor.modificationWorkspace?.localPath ?? ''} onChange={e => updateWorkspaceLocation(e.target.value)} placeholder={editor.modificationWorkspace?.locationType === 'remote' ? '例如：https://git.example.com/team/client.git 或 svn://server/client/trunk' : String.raw`例如：/srv/repos/client 或 E:\WorkProject\Client`}/><button type="button" className="primary compact path-detect-button" disabled={busy === 'detect' || !(editor.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace?.remoteUrl : editor.modificationWorkspace?.localPath)?.trim()} onClick={() => void detect()}>{busy === 'detect' ? '识别中…' : '识别来源'}</button></div><small>{editor.modificationWorkspace?.locationType === 'remote' ? '平台会在内部维护仓库缓存；每个任务仍会创建独立的真实工作目录。' : '本地仓库只用于发现权威远端，不读取修改、不要求干净，也不会被 pull 或 update。'}</small></label>
             {detection ? <div className={`detection-report ${detection.ready ? 'ready' : 'failed'}`}>
-              <div className="detection-summary"><StatusIcon status={detection.ready ? 'ready' : 'failed'}/><div><b>{detection.summary}</b><span>{detection.repositoryRoot ?? detection.path}</span></div><div className="detection-facts"><span>{detection.vcsKind.toUpperCase()}</span><span>{detection.hostingKind === 'gitlab' ? 'GitLab' : detection.hostingKind === 'github' ? 'GitHub' : detection.hostingKind === 'other' ? '其他 Git 托管' : '本地仓库'}</span></div></div>
-              {detection.remoteUrl && <div className="remote-line"><span>ORIGIN</span><code>{detection.remoteUrl}</code></div>}
+              <div className="detection-summary"><StatusIcon status={detection.ready ? 'ready' : 'failed'}/><div><b>{detection.summary}</b><span>{detection.location}</span></div><div className="detection-facts"><span>{detection.vcsKind.toUpperCase()}</span><span>{detection.hostingKind === 'gitlab' ? 'GitLab' : detection.hostingKind === 'github' ? 'GitHub' : detection.hostingKind === 'other' ? '其他 Git 托管' : 'SVN'}</span></div></div>
+              {detection.remoteUrl && <div className="remote-line"><span>权威远端</span><code>{detection.remoteUrl}</code></div>}
               {detection.checks.length > 0 && <div className="detection-checks">{detection.checks.map(item => <div key={item.id}><StatusIcon status={item.status}/><span>{item.summary}</span></div>)}</div>}
-            </div> : <div className="detect-placeholder"><span>等待识别</span><p>识别完成后，下一步会自动开放这个工程支持的交付方式。</p></div>}
+            </div> : <div className="detect-placeholder"><span>等待识别</span><p>识别后会固化权威远端，并自动开放这个工程支持的交付方式。</p></div>}
           </div>}
 
           {step === 4 && <div className="step-panel"><div className="step-intro"><span>04</span><div><h3>选择一个或多个交付出口</h3><p>每个动作共用同一条冻结日志；远端交付失败时会自动额外保留 Patch。</p></div></div>

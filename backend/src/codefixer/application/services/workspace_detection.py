@@ -4,7 +4,7 @@ import os
 import re
 import subprocess
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlparse
 
 import httpx
@@ -44,6 +44,18 @@ def _command_detail(result: subprocess.CompletedProcess[str] | None) -> str | No
         return f"命令退出码：{result.returncode}"
     # 诊断只返回末尾一行，避免把凭据或大量命令输出带入配置页面。
     return output.splitlines()[-1][:500]
+
+
+def _safe_command_detail(
+    result: subprocess.CompletedProcess[str] | None,
+    remote_urls: list[str],
+) -> str | None:
+    detail = _command_detail(result)
+    if detail is None:
+        return None
+    for remote_url in remote_urls:
+        detail = detail.replace(remote_url, sanitize_remote_url(remote_url))
+    return re.sub(r"(?i)\b([a-z][a-z0-9+.-]*://)[^/@\s]+@", r"\1", detail)
 
 
 def _remote_host(remote_url: str) -> str:
@@ -109,9 +121,10 @@ def _probe_gitlab_web_base(host: str) -> str | None:
     return None
 
 
-def _base_result(path: Path) -> WorkspaceDetection:
+def _base_result(*, location: str, location_type: Literal["local", "remote"]) -> WorkspaceDetection:
     return {
-        "path": str(path),
+        "location": location,
+        "locationType": location_type,
         "ready": False,
         "vcsKind": "unknown",
         "hostingKind": "none",
@@ -120,15 +133,136 @@ def _base_result(path: Path) -> WorkspaceDetection:
     }
 
 
-def detect_workspace(raw_path: str) -> WorkspaceDetection:
-    """确定性探测本机目录的版本控制类型与可用交付能力。"""
+def _git_detection(
+    detection: WorkspaceDetection,
+    *,
+    remote_urls: list[str],
+    repository_root: Path | None,
+    ready: bool,
+    remote_only: bool,
+) -> WorkspaceDetection:
+    checks: list[WorkspaceCheck] = detection["checks"]
+    hosting_kind = _hosting_kind(remote_urls)
+    web_base_url: str | None = None
+    hosts = {_remote_host(value) for value in remote_urls if _remote_host(value)}
+    if hosting_kind == "gitlab":
+        web_base_url = "https://gitlab.com"
+    elif hosting_kind == "github":
+        web_base_url = "https://github.com"
+    elif hosting_kind == "other" and len(hosts) == 1:
+        web_base_url = _probe_gitlab_web_base(next(iter(hosts)))
+        if web_base_url:
+            hosting_kind = "gitlab"
+    summary_suffix = "远端仓库" if remote_only else "工作区"
+    detection.update(
+        {
+            "ready": ready,
+            "vcsKind": "git",
+            "hostingKind": hosting_kind,
+            "summary": {
+                "gitlab": f"已识别为 GitLab Git {summary_suffix}",
+                "github": f"已识别为 GitHub Git {summary_suffix}",
+                "ambiguous": "Git origin 指向多个托管平台，仅可使用 Patch",
+                "other": f"已识别为 Git {summary_suffix}，仅可使用 Patch",
+            }[hosting_kind],
+        }
+    )
+    if repository_root is not None:
+        detection["repositoryRoot"] = str(repository_root)
+    safe_remote_urls = [sanitize_remote_url(value) for value in remote_urls]
+    if len(safe_remote_urls) == 1:
+        detection["remoteUrl"] = safe_remote_urls[0]
+    if web_base_url:
+        detection["webBaseUrl"] = web_base_url
+    checks.append(
+        _check(
+            "workspace.vcs",
+            "ready",
+            "Git 远端仓库可识别" if remote_only else "Git 工作区可识别",
+            safe_remote_urls[0] if remote_only and safe_remote_urls else str(repository_root),
+        )
+    )
+    if hosting_kind == "ambiguous":
+        checks.append(_check("workspace.hosting", "warning", "origin 托管类型存在歧义", "；".join(safe_remote_urls)))
+    elif hosting_kind == "other" and safe_remote_urls:
+        checks.append(_check("workspace.hosting", "warning", "未识别为 GitLab 或 GitHub，仅可使用 Patch", safe_remote_urls[0]))
+    elif safe_remote_urls:
+        checks.append(_check("workspace.hosting", "ready", f"已识别 {hosting_kind}", safe_remote_urls[0]))
+    return detection
 
+
+def _detect_remote(raw_location: str) -> WorkspaceDetection:
+    remote_url = raw_location.strip()
+    safe_remote_url = sanitize_remote_url(remote_url)
+    detection = _base_result(location=safe_remote_url, location_type="remote")
+    checks: list[WorkspaceCheck] = detection["checks"]
+    if not remote_url:
+        checks.append(_check("workspace.location", "failed", "请输入远端仓库地址"))
+        return detection
+
+    command_cwd = Path.cwd()
+    git_result = _run(["git", "ls-remote", "--symref", remote_url, "HEAD"], cwd=command_cwd)
+    if git_result is not None and git_result.returncode == 0 and git_result.stdout.strip():
+        checks.append(_check("workspace.remote", "ready", "Git 远端连接成功", safe_remote_url))
+        return _git_detection(
+            detection,
+            remote_urls=[remote_url],
+            repository_root=None,
+            ready=True,
+            remote_only=True,
+        )
+
+    svn_result = _run(
+        ["svn", "info", "--non-interactive", "--show-item", "revision", "--revision", "HEAD", remote_url],
+        cwd=command_cwd,
+    )
+    if svn_result is not None and svn_result.returncode == 0 and svn_result.stdout.strip():
+        detection.update(
+            {
+                "ready": True,
+                "vcsKind": "svn",
+                "hostingKind": "none",
+                "remoteUrl": safe_remote_url,
+                "summary": "已识别为 SVN 远端仓库",
+            }
+        )
+        checks.extend(
+            [
+                _check("workspace.remote", "ready", "SVN 远端连接成功", safe_remote_url),
+                _check("workspace.vcs", "ready", "SVN 远端仓库可识别", safe_remote_url),
+            ]
+        )
+        return detection
+
+    details = [
+        value
+        for value in (
+            _safe_command_detail(git_result, [remote_url]),
+            _safe_command_detail(svn_result, [remote_url]),
+        )
+        if value
+    ]
+    checks.append(_check("workspace.remote", "failed", "无法连接 Git 或 SVN 远端仓库", "；".join(details)))
+    return detection
+
+
+def detect_workspace(
+    location: str,
+    location_type: Literal["local", "remote"] = "local",
+) -> WorkspaceDetection:
+    """探测本机仓库入口或真实远端仓库地址。"""
+
+    if location_type == "remote":
+        return _detect_remote(location)
+    if location_type != "local":
+        raise ValueError(f"unsupported workspace location type: {location_type}")
+
+    raw_path = location
     expanded = os.path.expandvars(os.path.expanduser(raw_path.strip()))
     path = Path(expanded).resolve(strict=False) if expanded else Path("").resolve()
-    detection = _base_result(path)
+    detection = _base_result(location=str(path) if raw_path.strip() else "", location_type="local")
     checks: list[WorkspaceCheck] = detection["checks"]
     if not raw_path.strip():
-        detection["path"] = ""
         checks.append(_check("workspace.path", "failed", "请选择修改工作区目录"))
         return detection
     if not path.exists():
@@ -139,13 +273,13 @@ def detect_workspace(raw_path: str) -> WorkspaceDetection:
         return detection
     checks.append(_check("workspace.path", "ready", "目录存在", str(path)))
 
-    writable = os.access(path, os.R_OK | os.W_OK)
+    readable = os.access(path, os.R_OK)
     checks.append(
         _check(
             "workspace.access",
-            "ready" if writable else "failed",
-            "目录可读写" if writable else "目录不可读写",
-            None if writable else "修改工作区必须允许当前服务进程读取和写入",
+            "ready" if readable else "failed",
+            "目录可读取" if readable else "目录不可读取",
+            None if readable else "当前服务进程必须能够读取仓库入口",
         )
     )
 
@@ -163,54 +297,72 @@ def detect_workspace(raw_path: str) -> WorkspaceDetection:
             if remote_result is not None and remote_result.returncode == 0
             else []
         )
-        hosting_kind = _hosting_kind(remote_urls)
-        web_base_url: str | None = None
-        hosts = {_remote_host(value) for value in remote_urls if _remote_host(value)}
-        if hosting_kind == "gitlab":
-            web_base_url = "https://gitlab.com"
-        elif hosting_kind == "github":
-            web_base_url = "https://github.com"
-        elif hosting_kind == "other" and len(hosts) == 1:
-            web_base_url = _probe_gitlab_web_base(next(iter(hosts)))
-            if web_base_url:
-                hosting_kind = "gitlab"
-        detection.update(
-            {
-                "ready": writable,
-                "vcsKind": "git",
-                "hostingKind": hosting_kind,
-                "repositoryRoot": str(repository_root),
-                "summary": {
-                    "gitlab": "已识别为 GitLab Git 工作区",
-                    "github": "已识别为 GitHub Git 工作区",
-                    "ambiguous": "Git origin 指向多个托管平台，仅可使用 Patch",
-                    "other": "已识别为 Git 工作区，仅可使用 Patch",
-                }[hosting_kind],
-            }
+        remote_probe: subprocess.CompletedProcess[str] | None = None
+        remote_ready = False
+        if len(remote_urls) == 1:
+            remote_probe = _run(
+                ["git", "ls-remote", "--symref", remote_urls[0], "HEAD"],
+                cwd=repository_root,
+            )
+            remote_ready = bool(
+                remote_probe is not None
+                and remote_probe.returncode == 0
+                and remote_probe.stdout.strip()
+            )
+        result = _git_detection(
+            detection,
+            remote_urls=remote_urls,
+            repository_root=repository_root,
+            ready=readable and remote_ready,
+            remote_only=False,
         )
-        safe_remote_urls = [sanitize_remote_url(value) for value in remote_urls]
-        if safe_remote_urls:
-            detection["remoteUrl"] = safe_remote_urls[0]
-        if web_base_url:
-            detection["webBaseUrl"] = web_base_url
-        checks.append(_check("workspace.vcs", "ready", "Git 工作区可识别", str(repository_root)))
         if not remote_urls:
-            checks.append(_check("workspace.remote", "warning", "未配置 origin，仅可使用 Patch", _command_detail(remote_result)))
-        elif hosting_kind == "ambiguous":
-            checks.append(_check("workspace.hosting", "warning", "origin 托管类型存在歧义，仅可使用 Patch", "；".join(safe_remote_urls)))
-        elif hosting_kind == "other":
-            checks.append(_check("workspace.hosting", "warning", "未识别为 GitLab 或 GitHub，仅可使用 Patch", safe_remote_urls[0]))
+            result["summary"] = "已识别 Git 工作区，但未配置权威 origin"
+            checks.append(_check("workspace.remote", "failed", "未配置权威 origin"))
+        elif len(remote_urls) > 1:
+            result["summary"] = "已识别 Git 工作区，但无法确定唯一权威 origin"
+            safe_remote_urls = [sanitize_remote_url(value) for value in remote_urls]
+            checks.append(_check("workspace.remote", "failed", "origin 存在多个远端地址，无法确定权威来源", "；".join(safe_remote_urls)))
+        elif remote_ready:
+            checks.append(_check("workspace.remote", "ready", "Git 权威远端连接成功", sanitize_remote_url(remote_urls[0])))
         else:
-            checks.append(_check("workspace.hosting", "ready", f"已识别 {hosting_kind}", safe_remote_urls[0]))
-        return detection
+            result["summary"] = "已识别 Git 工作区，但权威 origin 不可访问"
+            checks.append(
+                _check(
+                    "workspace.remote",
+                    "failed",
+                    "Git 权威远端不可访问或没有 HEAD",
+                    _safe_command_detail(remote_probe, remote_urls),
+                )
+            )
+        return result
 
     svn_root_result = _run(["svn", "info", "--show-item", "wc-root"], cwd=path)
     svn_root_text = svn_root_result.stdout.strip() if svn_root_result is not None and svn_root_result.returncode == 0 else ""
     if svn_root_text:
         repository_root = Path(svn_root_text).resolve(strict=False)
+        svn_url_result = _run(["svn", "info", "--show-item", "url"], cwd=repository_root)
+        remote_url = (
+            svn_url_result.stdout.strip()
+            if svn_url_result is not None and svn_url_result.returncode == 0
+            else ""
+        )
+        remote_probe = (
+            _run(
+                ["svn", "info", "--non-interactive", "--show-item", "revision", "--revision", "HEAD", remote_url],
+                cwd=repository_root,
+            )
+            if remote_url
+            else None
+        )
+        remote_ready = bool(
+            remote_probe is not None
+            and remote_probe.returncode == 0
+            and remote_probe.stdout.strip()
+        )
         detection.update(
             {
-                "ready": writable,
+                "ready": readable and remote_ready,
                 "vcsKind": "svn",
                 "hostingKind": "none",
                 "repositoryRoot": str(repository_root),
@@ -218,6 +370,22 @@ def detect_workspace(raw_path: str) -> WorkspaceDetection:
             }
         )
         checks.append(_check("workspace.vcs", "ready", "SVN 工作副本可识别", str(repository_root)))
+        if remote_url and remote_ready:
+            detection["remoteUrl"] = sanitize_remote_url(remote_url)
+            checks.append(_check("workspace.remote", "ready", "SVN 权威远端连接成功", sanitize_remote_url(remote_url)))
+        elif remote_url:
+            detection["summary"] = "已识别 SVN 工作副本，但权威远端不可访问"
+            checks.append(
+                _check(
+                    "workspace.remote",
+                    "failed",
+                    "SVN 权威远端不可访问",
+                    _safe_command_detail(remote_probe, [remote_url]),
+                )
+            )
+        else:
+            detection["summary"] = "已识别 SVN 工作副本，但无法读取远端地址"
+            checks.append(_check("workspace.remote", "failed", "无法读取 SVN 工作副本地址", _command_detail(svn_url_result)))
         return detection
 
     details = [value for value in (_command_detail(inside_git), _command_detail(svn_root_result)) if value]

@@ -8,13 +8,29 @@
     "server": {"type": "object", "required": ["host", "port"], "properties": {"host": {"type": "string"}, "port": {"type": "integer", "minimum": 1, "maximum": 65535}}, "additionalProperties": false},
     "storage": {"type": "object", "required": ["dataRoot"], "properties": {"dataRoot": {"type": "string", "minLength": 1}}, "additionalProperties": false},
     "execution": {"type": "object", "required": ["mode", "currentModelId", "maxConcurrentTasks", "maxConcurrentLlmCalls", "baselineCohortWindowMs", "maxRepairAttempts"], "properties": {"mode": {"enum": ["automatic", "awaitingStart"]}, "currentModelId": {"type": "string", "minLength": 1}, "maxConcurrentTasks": {"type": "integer", "minimum": 1}, "maxConcurrentLlmCalls": {"type": "integer", "minimum": 1}, "baselineCohortWindowMs": {"type": "integer", "minimum": 0, "maximum": 10000}, "maxRepairAttempts": {"type": "integer", "minimum": 1}}, "additionalProperties": false},
-    "ticketProviders": {"type": "array"},
+    "ticketProviders": {"type": "array", "items": {"$ref": "#/$defs/ticketProvider"}},
     "agentProfiles": {"type": "array", "items": {"type": "object", "required": ["id", "runtime", "executableRef"], "properties": {"id": {"type": "string", "minLength": 1}, "runtime": {"enum": ["claudeCode", "codex", "opencode"]}, "executableRef": {"type": "string", "minLength": 1}, "model": {"type": ["string", "null"]}, "effort": {"type": ["string", "null"]}, "timeoutSeconds": {"type": "integer", "minimum": 1}, "maxBudgetUsd": {"type": ["number", "null"], "minimum": 0}, "extraArgs": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false}},
     "knowledgeProviders": {"type": "array"},
     "executableBindings": {"type": "object"},
     "projects": {"type": "array", "items": {"$ref": "#/$defs/project"}}
   },
   "$defs": {
+    "ticketProvider": {
+      "type": "object",
+      "required": ["id", "name", "type"],
+      "properties": {
+        "id": {"type": "string", "pattern": "^provider-[a-z0-9-]+$"},
+        "name": {"type": "string", "minLength": 1},
+        "type": {"enum": ["redmine", "tapd"]},
+        "enabled": {"type": "boolean"},
+        "baseUrl": {"type": "string", "minLength": 1},
+        "workspaceId": {"type": "string", "minLength": 1},
+        "apiKeySecretRef": {"type": "string", "minLength": 1},
+        "auth": {"type": "object"},
+        "pollIntervalSeconds": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": true
+    },
     "localizationSource": {
       "type": "object",
       "required": ["type", "path"],
@@ -29,19 +45,22 @@
     },
     "modificationWorkspace": {
       "type": "object",
-      "required": ["path"],
+      "required": ["locationType", "remoteUrl", "vcsKind", "hostingKind"],
       "properties": {
         "id": {"type": "string", "minLength": 1},
-        "path": {"type": "string", "minLength": 1},
+        "locationType": {"enum": ["local", "remote"]},
+        "localPath": {"type": "string", "minLength": 1},
         "allowedRoots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "deniedRoots": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
         "allowedExtensions": {"type": "array", "items": {"type": "string", "pattern": "^\\.[^/\\\\]+$"}, "uniqueItems": true},
         "vcsKind": {"enum": ["git", "svn", "unknown"]},
         "hostingKind": {"enum": ["gitlab", "github", "other", "none", "ambiguous"]},
-        "repositoryRoot": {"type": "string", "minLength": 1},
         "remoteUrl": {"type": "string", "minLength": 1},
         "webBaseUrl": {"type": "string", "minLength": 1}
       },
+      "allOf": [
+        {"if": {"properties": {"locationType": {"const": "local"}}}, "then": {"required": ["localPath"]}}
+      ],
       "additionalProperties": false
     },
     "finalAction": {

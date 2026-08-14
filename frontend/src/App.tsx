@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 import { ModeController } from './design-system/ModeController'
 import type { ExecutionMode } from './entities/config'
 import { api } from './lib/api'
@@ -85,7 +85,13 @@ export default function App() {
 
   const toggleTheme = () => setTheme(value => value === 'light' ? 'dark' : 'light')
 
-  return <div className="app-shell">
+  const closeBackdrop = (event:MouseEvent<HTMLDivElement>) => {
+    const target = event.target
+    if (!(target instanceof HTMLElement) || !target.classList.contains('modal-backdrop')) return
+    target.querySelector<HTMLButtonElement>('[aria-label="关闭"], .modal-actions .ghost')?.click()
+  }
+
+  return <div className="app-shell" onClick={closeBackdrop}>
     <header className="topbar">
       <div className="brand"><RepairMark/><div><b>CodeFixer</b><small>自动修复控制台</small></div></div>
       <ModeController mode={mode} onClick={() => setConfirmMode(true)}/>

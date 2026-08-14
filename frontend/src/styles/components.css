@@ -186,6 +186,8 @@
 /* Forms */
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .span-field { grid-column: 1 / -1; }
+/* 一对必须并排的字段。占满整行再自己分两列，与外层同宽同 gap，看不出是子栅格。 */
+.credential-pair { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .form-grid label,
 .wide-label,
 .path-field,
@@ -288,6 +290,9 @@
 .toast { position: fixed; right: 24px; bottom: 24px; z-index: 90; min-height: 42px; padding: 10px 15px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--text); color: var(--surface); box-shadow: var(--shadow-float); font-weight: 600; }
 .settings-toast { border-left: 3px solid var(--success); animation: toastIn var(--standard) var(--ease); }
 
+/* 原本 border-left-width: 3px，是全站最后一处「加粗左边线」。
+   底色加整圈同色系描边已经把它和表单区分开，不需要再靠一条粗线强调。
+   文案与语义不动——它讲的是 Secret 存储边界。 */
 .secret-boundary-note {
   display: flex;
   align-items: center;
@@ -295,7 +300,6 @@
   margin-top: 18px;
   padding: 13px 15px;
   border: 1px solid color-mix(in srgb, var(--nochange) 32%, var(--line));
-  border-left-width: 3px;
   border-radius: var(--r-sm);
   background: var(--nochange-soft);
 }
@@ -322,6 +326,7 @@
   .page-heading h1 { font-size: 30px; }
   .page-heading .primary { flex: 0 0 auto; }
   .form-grid { grid-template-columns: 1fr; }
+  .credential-pair { grid-template-columns: 1fr; }
   .span-field { grid-column: auto; }
   .modal-backdrop { padding: 0; }
   .config-modal,

@@ -15,6 +15,13 @@ def _client(tmp_path: Path, monkeypatch):
     repo = tmp_path / "repo"
     repo.mkdir()
     subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "-C", str(repo), "remote", "add", "origin", str(remote)], check=True)
+    (repo / "README.md").write_text("fixture\n", encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+    subprocess.run(["git", "-C", str(repo), "-c", "user.name=Test", "-c", "user.email=test@local", "commit", "-q", "-m", "fixture"], check=True)
+    subprocess.run(["git", "-C", str(repo), "push", "-q", "-u", "origin", "HEAD"], check=True)
     defaults.write_text(json.dumps({"schemaVersion": 1, "server": {"host": "127.0.0.1", "port": 9522}, "storage": {"dataRoot": "../../data"}, "execution": {"mode": "awaitingStart", "currentModelId": "agent-default", "maxConcurrentTasks": 3, "maxRepairAttempts": 3}, "agentProfiles": [{"id": "agent-default", "runtime": "codex", "executableRef": "git-cli"}], "executableBindings": {"git-cli": {"command": ["git"], "versionArgs": ["--version"], "versionConstraint": None}}, "projects": []}), encoding="utf-8")
     frontend = tmp_path / "frontend"
     frontend.mkdir()
@@ -37,7 +44,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert changed.json()["mode"] == "automatic"
         etag = changed.json()["etag"]
         repository = repo
-        project = {"id": "demo", "name": "Demo", "routingRules": [{"id": "primary", "providerRef": "tapd", "priority": 100, "catchAll": True, "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}}], "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"path": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "submitterName": "Tester"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
+        project = {"id": "demo", "name": "Demo", "routingRules": [{"id": "primary", "providerRef": "tapd", "priority": 100, "catchAll": True, "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}}], "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"locationType": "local", "localPath": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "submitterName": "Tester"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
         created = client.post("/api/projects", json=project, headers={"If-Match": etag})
         assert created.status_code == 201
         project_id = created.json()["project"]["id"]
@@ -64,3 +71,31 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         rejected = client.put(f"/api/projects/{project_id}", json=incompatible, headers={"If-Match": created.json()["etag"]})
         assert rejected.status_code == 422
         assert "不支持 gitlabPush" in rejected.json()["error"]["message"]
+
+
+def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: Path, monkeypatch):
+    test_client, _ = _client(tmp_path, monkeypatch)
+    with test_client as client:
+        etag = client.get("/api/settings").json()["etag"]
+        created = client.post(
+            "/api/providers",
+            headers={"If-Match": etag},
+            json={
+                "provider": {"name": "Haru", "type": "tapd", "workspaceId": "45286624", "auth": {"mode": "oauth"}},
+                "secrets": {"token": "token-value"},
+            },
+        )
+        assert created.status_code == 201
+        provider = created.json()["provider"]
+        assert provider["id"].startswith("provider-")
+        assert provider["id"] != provider["name"]
+        assert provider["name"] == "Haru"
+
+        renamed = client.put(
+            f"/api/providers/{provider['id']}",
+            headers={"If-Match": created.json()["etag"]},
+            json={"provider": {**provider, "id": "user-cannot-change-this", "name": "Haru TAPD"}, "secrets": {}},
+        )
+        assert renamed.status_code == 200
+        assert renamed.json()["provider"]["id"] == provider["id"]
+        assert renamed.json()["provider"]["name"] == "Haru TAPD"

@@ -153,7 +153,12 @@
 
 /* Project workbench */
 .editor-backdrop { padding: 18px; }
-.project-workbench { display: grid; grid-template-rows: auto minmax(0,1fr) auto; width: min(1120px, 100%); height: min(800px, calc(100vh - 36px)); max-height: none; padding: 0; overflow: hidden; }
+/* 定高。实测四步自然高 515 / 534 / 633 / 909，跟随内容会四档抽动，
+   实际体验里这种跳动比空白更难受，所以宁可让短步骤留白。
+   912 = 最坏步骤取整：第 4 步 GitHub 工程勾满 Patch + PR（两行配置都带输入框，
+   比 GitLab 的单列 quiet 行高 31px），内容 716 + 头尾 193 = 909。
+   视口不足时退到 calc(100vh - 36px)，此时才会滚，由 workbench-body 的渐隐提示。 */
+.project-workbench { display: grid; grid-template-rows: auto minmax(0,1fr) auto; width: min(1120px, 100%); height: min(912px, calc(100vh - 36px)); padding: 0; overflow: hidden; }
 .workbench-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 22px 26px 18px; border-bottom: 1px solid var(--line); }
 .workbench-head > div > small { color: var(--signal); font: 600 10px/1 var(--font-mono); letter-spacing: .14em; }
 .workbench-head h2 { margin: 6px 0 4px; font-size: 23px; }
@@ -173,28 +178,53 @@
 .project-step.current { background: var(--signal-soft); color: var(--signal); }
 .project-step.current > span { border-color: var(--signal); background: var(--signal); color: #fff; box-shadow: 0 0 0 4px color-mix(in srgb,var(--signal) 13%,transparent); }
 .project-step.complete > span { border-color: var(--success); background: var(--success); color: #fff; }
-.workbench-body { min-height: 0; padding: 27px 30px 42px; overflow-y: auto; }
+/* 溢出时上下渐隐，告诉用户还有内容没露出来。
+   不能用背景渐变叠加：卡片自己有底色，会把背景整块盖住（折叠区展开后就是这样）。
+   改用 mask —— 它作用在合成结果上，卡片底色也会一起淡出。
+   三层按 mask 默认的 add 合成：一层 scroll 附着的双向渐隐钉在视口上常驻，
+   两层 local 附着的实心带随内容走；滚到顶/底时实心带正好压上来把渐隐补满，
+   内容不溢出时两条带子同时在场，整块完全不透明。全程零 JS。 */
+.workbench-body {
+  min-height: 0; padding: 27px 30px 42px; overflow-y: auto;
+  mask:
+    linear-gradient(#000 0 0) top / 100% 28px local no-repeat,
+    linear-gradient(#000 0 0) bottom / 100% 32px local no-repeat,
+    linear-gradient(transparent, #000 28px, #000 calc(100% - 32px), transparent) scroll;
+}
 .step-panel { animation: stepIn var(--standard) var(--ease); }
 .step-intro { display: grid; grid-template-columns: 42px 1fr; gap: 14px; margin-bottom: 26px; }
 .step-intro > span { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line-strong); color: var(--signal); font: 600 12px/1 var(--font-mono); }
 .step-intro h3 { margin: 0 0 5px; font-size: 18px; }
 .step-intro p { max-width: 680px; margin: 0; font-size: 12px; }
-.soft-warning { margin-top: 16px; padding: 11px 13px; border-left: 3px solid var(--warning); background: var(--warning-soft); color: var(--warning); font-size: 12px; }
+/* 原本是「3px 彩色左边线 + 底色」，右侧没有收口，一块底色悬在版面里。
+   底色已经足够传达警示，边框补全成一圈同色系细线即可。 */
+.soft-warning { margin-top: 16px; padding: 11px 13px; border: 1px solid color-mix(in srgb,var(--warning) 40%,transparent); border-radius: var(--r-sm); background: var(--warning-soft); color: var(--warning); font-size: 12px; }
+.workspace-location-switch { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 9px; margin-bottom: 19px; }
+.workspace-location-switch button { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); text-align: left; }
+.workspace-location-switch button:hover { border-color: var(--line-strong); background: var(--surface-2); }
+.workspace-location-switch button.selected { border-color: var(--signal); background: var(--signal-soft); box-shadow: inset 0 0 0 1px var(--signal); }
+.workspace-location-switch b,
+.workspace-location-switch small { display: block; }
+.workspace-location-switch b { font-size: 12px; }
+.workspace-location-switch small { margin-top: 4px; color: var(--tertiary); font-size: 10px; }
 .path-field { display: block; }
 .path-field > span { display: block; margin-bottom: 7px; }
 .path-field > div { display: flex; gap: 9px; }
 .path-field input { flex: 1; min-width: 0; margin: 0; }
 .path-chip { display: grid; place-items: center; flex: 0 0 auto; min-width: 58px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--tertiary); font: 600 10px/1 var(--font-mono); }
-.source-separation { display: grid; grid-template-columns: 1fr 80px 1fr; align-items: center; gap: 15px; margin-top: 28px; padding: 18px; border-block: 1px solid var(--line); }
+.source-separation { display: grid; grid-template-columns: 1fr 80px 1fr; align-items: center; gap: 15px; margin-top: 28px; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .source-separation div { padding-left: 11px; border-left: 3px solid var(--line-strong); }
 .source-separation b,
 .source-separation span { display: block; }
 .source-separation b { font-size: 12px; }
 .source-separation span { margin-top: 3px; color: var(--tertiary); font-size: 10px; }
 .source-separation svg { width: 100%; fill: none; stroke: var(--signal); stroke-width: 1.3; }
-.detection-report { margin-top: 19px; border-block: 1px solid var(--line-strong); background: var(--surface-2); }
-.detection-report.ready { border-left: 3px solid var(--success); }
-.detection-report.failed { border-left: 3px solid var(--failed); }
+/* 识别结果是一张完整的卡，原来只有上下边线加一条彩色左边线，左右不收口。
+   状态改由整圈描边表达：成功/失败各自染色，比 3px 左边线更容易一眼扫到。
+   overflow 用来裁掉内部分隔行在圆角处露出的直角。 */
+.detection-report { margin-top: 19px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: var(--surface-2); overflow: hidden; }
+.detection-report.ready { border-color: color-mix(in srgb,var(--success) 55%,var(--line-strong)); }
+.detection-report.failed { border-color: color-mix(in srgb,var(--failed) 55%,var(--line-strong)); }
 .detection-summary { display: grid; grid-template-columns: 34px minmax(0,1fr) auto; align-items: center; gap: 12px; padding: 14px 16px; }
 .detect-icon { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid currentColor; border-radius: 50%; color: var(--line-strong); }
 .detect-icon.ready { color: var(--success); }
@@ -218,7 +248,8 @@
 .detect-placeholder span { color: var(--tertiary); font: 600 10px/1 var(--font-mono); letter-spacing: .1em; }
 .detect-placeholder p { margin: 7px 0 0; font-size: 11px; }
 
-.action-choice-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; }
+/* 组间距 26px：明显大于卡片之间的 10px，让「日志块 / 出口卡组」读作两块并列内容 */
+.action-choice-grid { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 10px; margin-top: 26px; }
 .action-choice { position: relative; min-height: 124px; padding: 16px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); text-align: left; }
 .action-choice:hover:not(:disabled) { border-color: var(--line-strong); background: var(--surface-2); }
 .action-choice.selected { border-color: var(--signal); box-shadow: inset 0 0 0 1px var(--signal); }
@@ -229,14 +260,16 @@
 .action-choice small { margin-top: 5px; color: var(--tertiary); font-size: 10px; line-height: 1.45; }
 .choice-check { position: absolute; top: 12px; right: 12px; display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--line-strong); border-radius: 4px; font-size: 10px; }
 .action-choice.selected .choice-check { border-color: var(--signal); background: var(--signal); color: #fff; }
-.action-config-stack { display: grid; margin-top: 17px; border-block: 1px solid var(--line); }
-.action-config { display: grid; grid-template-columns: minmax(180px,.65fr) minmax(220px,1fr); align-items: center; gap: 20px; padding: 13px 4px; border-bottom: 1px solid var(--line); }
+.action-config-stack { display: grid; margin-top: 17px; padding: 0 14px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.action-config { display: grid; grid-template-columns: minmax(180px,.65fr) minmax(220px,1fr); align-items: center; gap: 20px; padding: 14px 0; border-bottom: 1px solid var(--line); }
 .action-config:last-child { border-bottom: 0; }
 .action-config > div b,
 .action-config > div small { display: block; }
 .action-config > div b { font-size: 12px; }
 .action-config > div small { margin-top: 3px; color: var(--tertiary); font-size: 10px; }
-.delivery-log-config { margin-top: 4px; padding: 18px; border: 1px solid var(--line-strong); border-left: 3px solid var(--signal); background: color-mix(in srgb,var(--signal-soft) 38%,var(--surface-2)); }
+/* 交付日志与三张出口卡是并列关系，不是父子。改前间隙 0px，两块焊在一起，
+   看上去像日志块的三个子选项。完整描边替代「描边 + 彩色左边线」，与设置页同一处置。 */
+.delivery-log-config { margin-top: 4px; padding: 18px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); background: color-mix(in srgb,var(--signal-soft) 38%,var(--surface-2)); }
 .delivery-log-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 15px; }
 .delivery-log-head span { font: 650 12px/1 var(--font-mono); letter-spacing: .08em; }
 .delivery-log-head p { margin: 0; color: var(--muted); font-size: 11px; }
@@ -301,13 +334,27 @@
 .changed-files-list b { font-weight: 600; }
 .changed-files-list em { color: var(--tertiary); font-size: 9px; font-style: normal; text-align: right; }
 .no-action-selected { padding: 18px; color: var(--tertiary); font-size: 11px; text-align: center; }
-.project-policy { margin-top: 30px; border-top: 1px solid var(--line-strong); }
-.project-policy > summary { padding: 17px 3px; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+/* 原本只有一条 border-top，展开后一大片表单没有右边和下边，浮在版面上。
+   收成一只完整的盒子后，「这是一组可折叠的附加规则」才有边界。 */
+.project-policy { margin-top: 30px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); }
+.project-policy > summary { padding: 15px 17px; color: var(--muted); font-size: 12px; font-weight: 600; cursor: pointer; }
+.project-policy > summary:hover { color: var(--text); }
+.project-policy[open] > summary { border-bottom: 1px solid var(--line); }
 .project-policy > summary span { margin-right: 10px; color: var(--text); }
 .project-policy > summary small { color: var(--tertiary); font-size: 10px; font-weight: 400; }
-.policy-body { padding-top: 4px; }
-.policy-body h4 { margin: 22px 0 12px; }
+.policy-body { padding: 19px 17px 22px; }
+/* 折叠区原来只有 h4(14px/600) 和 label(12px/500) 两级，差 2px 一档字重，
+   分组标题和字段标签几乎同一视觉重量，扫下来就是一片大小字混排。
+   这里不靠字号硬堆，改用全站已有的 mono 眉标：靠字族、字距、颜色区分「这是分组」，
+   与 12px 无衬线字段标签完全是两个物种，一眼能断句。 */
+.policy-body h4 { margin: 0; color: var(--tertiary); font: 600 10px/1 var(--font-mono); letter-spacing: .12em; }
+/* 眉标降到 10px 后单靠间距断不开三组，补一条虚线分隔；首组不画。 */
+.policy-body > h4,
+.policy-body > .advanced-heading { margin: 24px 0 13px; padding-top: 19px; border-top: 1px dashed var(--line); }
+.policy-body > :first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .advanced-heading { display: flex; align-items: center; justify-content: space-between; }
+/* 眉标只有 10px，旁边挂一枚 40px 的默认按钮会把整行重心压到按钮上，缩到眉标量级 */
+.advanced-heading .ghost.framed { min-height: 28px; padding: 5px 10px; font-size: 11px; }
 .verification-row { display: grid; grid-template-columns: .75fr 1fr 1.2fr .8fr 36px; gap: 7px; margin-bottom: 7px; }
 .verification-row input,
 .verification-row select { margin: 0; }
@@ -317,15 +364,18 @@
 .workbench-actions > div { display: flex; gap: 9px; }
 
 /* Provider ledger */
-.provider-grid { display: grid; border-block: 1px solid var(--line-strong); background: var(--surface); }
-.provider-channel { position: relative; display: grid; grid-template-columns: 54px minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 18px 20px 18px 24px; border-bottom: 1px solid var(--line); }
-.provider-channel:last-child { border-bottom: 0; }
-.provider-channel::before { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--warning); content: ""; }
-.provider-channel[data-health="ready"]::before { background: var(--success); }
-.provider-channel[data-health="failed"]::before { background: var(--failed); }
-.provider-channel[data-health="inactive"]::before { background: var(--line-strong); }
-.provider-monogram { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid currentColor; border-radius: var(--r-sm); color: #9c2e3d; background: color-mix(in srgb, currentColor 7%, var(--surface)); }
-.provider-monogram.tapd { color: #2f66bd; }
+/* 原本是「列表壳只有上下边线 + 每条无边框无圆角无底色」，类名叫 card 但长成表格行，
+   两边都不彻底。反馈源常态只有 1-3 条，卡的密度撑得住，收成独立卡片。 */
+.provider-grid { display: grid; gap: 10px; }
+.provider-channel { display: grid; grid-template-columns: 54px minmax(0,1fr) auto; align-items: center; gap: 16px; padding: 17px 19px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); transition: border-color var(--fast), box-shadow var(--fast); }
+.provider-channel:hover { border-color: var(--line-strong); box-shadow: var(--shadow-float); }
+/* 4px 彩色左边条已删除：连接状态在同一张卡里由圆点和文字讲过两遍，色带是第三遍，
+   而且列表壳没有左边框时它事实上成了整个列表的左边线，是这一页方感最重的来源。
+   失败态例外——它需要在一屏里被一眼扫到，用整圈描边染色表达，与弹窗内 detection-report 同一处置。 */
+.provider-channel[data-health="failed"] { border-color: color-mix(in srgb,var(--failed) 42%,var(--line)); background: color-mix(in srgb,var(--failed-soft) 55%,var(--surface)); }
+.provider-channel[data-health="inactive"] { background: var(--surface-2); }
+.provider-monogram { display: grid; place-items: center; width: 46px; height: 46px; border: 1px solid currentColor; border-radius: var(--r-sm); color: var(--brand-redmine); background: color-mix(in srgb, currentColor 7%, var(--surface)); }
+.provider-monogram.tapd { color: var(--brand-tapd); }
 .provider-monogram span { font: 600 17px/1 var(--font-mono); }
 .provider-body { min-width: 0; }
 .provider-body > small { color: var(--tertiary); font: 600 10px/1 var(--font-mono); letter-spacing: .12em; }
@@ -336,7 +386,21 @@
 .provider-meta i.ready-dot { background: var(--success); }
 .provider-meta i.failed-dot { background: var(--failed); }
 .provider-actions { display: flex; align-items: center; gap: 8px; }
+/* 定高。栅格填平后五态实测 540（编辑 Redmine）/ 541（新增 Redmine、TAPD Token）/ 624（TAPD 账密），
+   624 = 最高的账密态取整：身份行 + 登录方式行 + 凭据对三行表单。
+   不定高的话切换类型会有 83px 抽动，底栏按钮跟着窜位；与流水线弹窗同一处置。
+   视口不足时退到 calc(100vh - 48px)，此时 config-modal 自身的 overflow:auto 接管。 */
+.provider-editor { display: flex; flex-direction: column; height: min(624px, calc(100vh - 48px)); }
+/* 短表单下的多余空间落在这里，按钮位置恒定 */
+.provider-editor .modal-actions { margin-top: auto; padding-top: 24px; }
 .provider-type-switch { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 21px; }
+/* 编辑态的只读身份条：同样的信息，去掉按钮体量和 disabled 的 46% 透明度。
+   高度 62px 与双列切换器（66px + 21px 下边距）接近，两态之间不会大幅跳动。 */
+.provider-type-static { display: flex; align-items: center; gap: 12px; margin-bottom: 21px; padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.provider-type-static .provider-monogram { width: 32px; height: 32px; flex: 0 0 auto; font: 600 12px/1 var(--font-mono); }
+.provider-type-static b { display: block; font-size: 13px; }
+.provider-type-static small { display: block; margin-top: 2px; color: var(--tertiary); font-size: 10px; }
+.provider-type-static em { margin-left: auto; color: var(--tertiary); font: 600 10px/1 var(--font-mono); font-style: normal; letter-spacing: .1em; }
 .provider-type-switch button { display: grid; grid-template-columns: 34px 1fr; align-items: center; gap: 11px; min-height: 66px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--text); text-align: left; }
 .provider-type-switch button > span { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); font: 600 12px/1 var(--font-mono); }
 .provider-type-switch b,
@@ -372,6 +436,8 @@
 .current-model-control { display: grid; grid-template-columns: 42px minmax(0,1fr) 10px; align-items: center; gap: 11px; padding-top: 14px; border-top: 1px solid var(--line); }
 .runtime-mark { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--text); }
 .runtime-mark svg { width: 25px; height: 25px; fill: none; stroke: currentColor; stroke-width: 1.3; }
+.runtime-claudeCode svg,
+.runtime-codex svg { fill: currentColor; stroke: none; }
 .runtime-claudeCode { color: #b85f42; }
 .runtime-codex { color: var(--success); }
 .runtime-opencode { color: var(--nochange); }
@@ -490,6 +556,7 @@
   .path-field input { flex-basis: 100%; }
   .path-chip,
   .path-detect-button { min-height: 44px; }
+  .workspace-location-switch { grid-template-columns: 1fr; }
   .detection-summary { grid-template-columns: 30px minmax(0,1fr); }
   .detection-facts { grid-column: 1 / 3; padding-left: 42px; }
   .action-choice-grid { grid-template-columns: 1fr; }
@@ -507,6 +574,10 @@
   .verification-row,
   .route-condition { grid-template-columns: 1fr; }
   .provider-channel { grid-template-columns: 46px 1fr; padding-inline: 16px; }
+  /* 移动端弹窗铺满全屏（components.css 断点里 width:100%; max-height:100vh），定高会打架 */
+  .provider-editor { height: auto; }
+  .provider-editor .modal-actions { margin-top: 24px; padding-top: 0; }
+  .provider-type-static em { display: none; }
   .provider-actions { grid-column: 1 / 3; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--line); }
   .provider-type-switch { grid-template-columns: 1fr; }
   .control-grid { gap: 12px; }

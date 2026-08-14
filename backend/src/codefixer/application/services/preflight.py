@@ -23,35 +23,12 @@ def _check(check_id: str, ok: bool, summary: str, suggestion: str | None = None,
     return value
 
 
-def _git_delivery_health(repository: Path, command: list[str]) -> tuple[bool, str]:
+def _git_delivery_health(remote_url: str, command: list[str], *, cwd: Path) -> tuple[bool, str]:
     try:
         process_env = {**os.environ, "GIT_TERMINAL_PROMPT": "0"}
-        layout = subprocess.run(
-            [*command, "rev-parse", "--is-inside-work-tree"],
-            cwd=repository,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            env=process_env,
-        )
-        if layout.returncode != 0 or layout.stdout.strip() != "true":
-            return False, "所选路径不是 Git 工作区"
-        remote = subprocess.run(
-            [*command, "remote", "get-url", "origin"],
-            cwd=repository,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
-            env=process_env,
-        )
-        remote_url = remote.stdout.strip()
-        if remote.returncode != 0 or not remote_url:
-            return False, "仓库没有可用的 origin remote"
         probe = subprocess.run(
-            [*command, "ls-remote", "--heads", "origin"],
-            cwd=repository,
+            [*command, "ls-remote", "--heads", remote_url],
+            cwd=cwd,
             capture_output=True,
             text=True,
             timeout=20,
@@ -62,9 +39,9 @@ def _git_delivery_health(repository: Path, command: list[str]) -> tuple[bool, st
             reason = probe.stderr.strip().splitlines()[-1] if probe.stderr.strip() else "远端访问失败"
             reason = re.sub(r"(https?://)[^/@\s]+@", r"\1***@", reason)
             return False, reason
-        return True, f"Git remote 可访问：{sanitize_remote_url(remote_url)}"
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return False, f"Git remote 检查失败：{exc}"
+        return True, f"权威 Git 远端可访问：{sanitize_remote_url(remote_url)}"
+    except (OSError, subprocess.TimeoutExpired):
+        return False, "Git remote 检查无法执行或超时"
 
 
 def _direct_path(raw: object) -> Path | None:
@@ -172,17 +149,33 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     workspace = normalized.get("modificationWorkspace")
     if not isinstance(workspace, dict):
         raise ValueError("必须配置修改工作区")
-    workspace_path = _direct_path(workspace.get("path"))
-    if workspace_path is None:
-        raise ValueError("修改工作区必须使用绝对路径")
-    detection = detect_workspace(str(workspace_path))
+    location_type = str(workspace.get("locationType") or "").strip()
+    if location_type == "local":
+        local_path = _direct_path(workspace.get("localPath"))
+        if local_path is None:
+            raise ValueError("本地修改源必须使用绝对路径")
+        detection = detect_workspace(str(local_path), location_type="local")
+    elif location_type == "remote":
+        remote_url = str(workspace.get("remoteUrl") or "").strip()
+        if not remote_url:
+            raise ValueError("远端修改源必须填写仓库 URL")
+        detection = detect_workspace(remote_url, location_type="remote")
+    else:
+        raise ValueError("修改源入口类型必须是本地仓库或远端 URL")
     if not detection.get("ready"):
-        raise ValueError(str(detection.get("summary") or "修改工作区不可用"))
+        failure = next((item for item in detection.get("checks") or [] if item.get("status") == "failed"), None)
+        raise ValueError(str((failure or {}).get("summary") or detection.get("summary") or "修改源不可用"))
     for check in _workspace_policy_checks(workspace):
         if check["status"] == "failed":
             raise ValueError(str(check["summary"]))
-    workspace["path"] = str(workspace_path)
-    for key in ("vcsKind", "hostingKind", "repositoryRoot", "remoteUrl", "webBaseUrl"):
+    workspace["locationType"] = location_type
+    if location_type == "local":
+        workspace["localPath"] = str(detection["location"])
+    else:
+        workspace.pop("localPath", None)
+    workspace.pop("path", None)
+    workspace.pop("repositoryRoot", None)
+    for key in ("vcsKind", "hostingKind", "remoteUrl", "webBaseUrl"):
         if key in detection:
             workspace[key] = detection[key]
         else:
@@ -241,13 +234,12 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
     )
 
     workspace = project.get("modificationWorkspace") or {}
-    workspace_path = _direct_path(workspace.get("path"))
-    if workspace_path is None:
-        detection = detect_workspace("")
-        checks.append(_check("workspace.path", False, "缺少修改工作区路径", "请选择 Git 或 SVN 工作目录的绝对路径"))
-    else:
-        detection = detect_workspace(str(workspace_path))
-        checks.extend(detection["checks"])
+    location_type = str(workspace.get("locationType") or "")
+    remote_url = str(workspace.get("remoteUrl") or "").strip()
+    if location_type not in {"local", "remote"}:
+        checks.append(_check("workspace.location_type", False, "缺少修改源入口类型", "请选择本地仓库或远端 URL"))
+    detection = detect_workspace(remote_url, location_type="remote")
+    checks.extend(detection["checks"])
     checks.extend(_workspace_policy_checks(workspace))
 
     profiles = {str(item.get("id")): item for item in loaded.config.agentProfiles if item.get("id")}
@@ -304,16 +296,16 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
             output_ok = _writable_directory(output)
             checks.append(_check(f"delivery.{index}.patch_output", output_ok, f"Patch 输出：{output}" if output_ok else "Patch 输出目录无效或不可写", "请选择当前服务进程可写的绝对目录" if not output_ok else None))
         if action_type in {"gitlabPush", "githubPr"}:
-            root_value = detection.get("repositoryRoot")
-            repository = Path(str(root_value)) if root_value else None
+            remote_url = str(detection.get("remoteUrl") or "").strip()
             git_binding = loaded.config.executableBindings.get("git-cli", {})
             git_command = git_binding.get("command") if isinstance(git_binding, dict) else None
             if not isinstance(git_command, list) or not git_command:
                 git_command = ["git"] if shutil.which("git") else None
-            if repository is None or not repository.exists() or not isinstance(git_command, list) or not git_command:
-                healthy, summary = False, "请选择存在的本地 Git 仓库"
+            loaded.data_root.mkdir(parents=True, exist_ok=True)
+            if not remote_url or not isinstance(git_command, list) or not git_command:
+                healthy, summary = False, "缺少可访问的权威 Git 远端"
             else:
-                healthy, summary = _git_delivery_health(repository, [str(item) for item in git_command])
+                healthy, summary = _git_delivery_health(remote_url, [str(item) for item in git_command], cwd=loaded.data_root)
             checks.append(_check(f"delivery.{index}.remote", healthy, summary, "检查修改工作区、origin 与当前机器的 Git 认证" if not healthy else None))
             if action_type == "githubPr":
                 targets = action.get("targetBranches") or []
@@ -324,14 +316,6 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
         sanitized_project_id = re.sub(r"[^A-Za-z0-9._-]+", "-", project_id).strip(".-") or "project"
         fallback = loaded.data_root / "fallback-patches" / sanitized_project_id
         fallback_ok = _writable_directory(fallback)
-        repository_root = Path(str(detection["repositoryRoot"])) if detection.get("repositoryRoot") else None
-        if fallback_ok and repository_root is not None:
-            try:
-                fallback.resolve().relative_to(repository_root.resolve())
-            except ValueError:
-                pass
-            else:
-                fallback_ok = False
         checks.append(_check("delivery.fallback_patch", fallback_ok, f"保底 Patch 目录：{fallback}" if fallback_ok else "保底 Patch 目录不可用", "检查 storage.dataRoot 的可写性，且不要把数据目录放在修改仓库内" if not fallback_ok else None))
     failed = [item for item in checks if item["status"] == "failed"]
     return {"projectId": project_id, "ready": not failed, "status": "ready" if not failed else "not_ready", "checks": checks}

@@ -3,7 +3,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from codefixer.adapters.sources.git import GitSourceAdapter
+from codefixer.adapters.sources.common import SourceCommandError
 from codefixer.application.ports.sources import SourcePolicy
 
 
@@ -113,3 +116,53 @@ def test_git_restore_candidate_survives_crlf_stored_in_repository(tmp_path: Path
         assert not side_effect.exists()
     finally:
         adapter.cleanup(manifest)
+
+
+def test_git_refresh_uses_remote_branch_without_touching_dirty_worktree(tmp_path: Path) -> None:
+    remote = tmp_path / "remote.git"
+    seed = tmp_path / "seed"
+    local = tmp_path / "local"
+    remote.mkdir()
+    git(remote, "init", "--bare")
+    seed.mkdir()
+    git(seed, "init")
+    git(seed, "config", "user.email", "test@codefixer.local")
+    git(seed, "config", "user.name", "CodeFixer Test")
+    (seed / "app.py").write_text("value = 1\n", encoding="utf-8")
+    git(seed, "add", ".")
+    git(seed, "commit", "-m", "initial")
+    branch = git(seed, "branch", "--show-current")
+    git(seed, "remote", "add", "origin", str(remote))
+    git(seed, "push", "-u", "origin", branch)
+    subprocess.run(["git", "clone", str(remote), str(local)], check=True, capture_output=True)
+
+    (local / "app.py").write_text("dirty local value\n", encoding="utf-8")
+    (seed / "app.py").write_text("value = 2\n", encoding="utf-8")
+    git(seed, "add", ".")
+    git(seed, "commit", "-m", "remote update")
+    remote_revision = git(seed, "rev-parse", "HEAD")
+    git(seed, "push", "origin", branch)
+
+    adapter = GitSourceAdapter(local, ["git"])
+
+    assert adapter.refresh_and_current_revision() == remote_revision
+    assert (local / "app.py").read_text(encoding="utf-8") == "dirty local value\n"
+
+    git(local, "switch", "-c", "local-only")
+    with pytest.raises(SourceCommandError, match="origin does not contain current branch"):
+        adapter.refresh_and_current_revision()
+
+
+def test_git_refresh_does_not_fall_back_to_local_head_when_fetch_fails(tmp_path: Path) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    git(repository, "init")
+    git(repository, "config", "user.email", "test@codefixer.local")
+    git(repository, "config", "user.name", "CodeFixer Test")
+    (repository / "app.py").write_text("value = 1\n", encoding="utf-8")
+    git(repository, "add", ".")
+    git(repository, "commit", "-m", "local only")
+    git(repository, "remote", "add", "origin", str(tmp_path / "missing.git"))
+
+    with pytest.raises(SourceCommandError):
+        GitSourceAdapter(repository, ["git"]).refresh_and_current_revision()

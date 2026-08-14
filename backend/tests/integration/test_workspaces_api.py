@@ -6,6 +6,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+import codefixer.application.services.workspace_detection as workspace_detection
 from codefixer.config import load_config
 from codefixer.main import create_app
 
@@ -38,12 +39,24 @@ def test_detect_and_browse_workspace(tmp_path: Path, monkeypatch):
     child.mkdir(parents=True)
     subprocess.run(["git", "init", "-q", str(repository)], check=True)
     subprocess.run(["git", "-C", str(repository), "remote", "add", "origin", "git@github.com:company/project.git"], check=True)
+    original_run = workspace_detection._run
+
+    def connected_remote(command: list[str], *, cwd: Path, timeout: int = 10):
+        if command[:2] == ["git", "ls-remote"]:
+            return subprocess.CompletedProcess(command, 0, "ref: refs/heads/main\tHEAD\nabc\tHEAD\n", "")
+        return original_run(command, cwd=cwd, timeout=timeout)
+
+    monkeypatch.setattr(workspace_detection, "_run", connected_remote)
 
     with _client(tmp_path, monkeypatch) as client:
-        detected = client.post("/api/workspaces/detect", json={"path": str(child)})
+        detected = client.post(
+            "/api/workspaces/detect",
+            json={"locationType": "local", "location": str(child)},
+        )
         assert detected.status_code == 200
         assert detected.json() == {
-            "path": str(child.resolve()),
+            "locationType": "local",
+            "location": str(child.resolve()),
             "ready": True,
             "vcsKind": "git",
             "hostingKind": "github",
@@ -71,7 +84,10 @@ def test_detect_workspace__omits_unavailable_optional_metadata(tmp_path: Path, m
     plain_directory = tmp_path / "plain"
     plain_directory.mkdir()
     with _client(tmp_path, monkeypatch) as client:
-        response = client.post("/api/workspaces/detect", json={"path": str(plain_directory)})
+        response = client.post(
+            "/api/workspaces/detect",
+            json={"locationType": "local", "location": str(plain_directory)},
+        )
 
     assert response.status_code == 200
     assert response.json()["ready"] is False

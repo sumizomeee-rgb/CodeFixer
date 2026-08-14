@@ -1,4 +1,4 @@
-import type { ExecutionMode, PreflightResult, ProjectConfig, ProviderVersion, ReadinessResponse, SettingsResponse, WorkspaceDetection } from '../entities/config'
+import type { ExecutionMode, PreflightResult, ProjectConfig, ProviderVersion, ReadinessResponse, SettingsResponse, TicketProviderConfig, WorkspaceDetection, WorkspaceLocationType } from '../entities/config'
 import type { DashboardData, TaskRecord } from '../entities/task'
 
 export class ApiError extends Error { status:number; code:string; constructor(status:number,code:string,message:string){super(message);this.status=status;this.code=code} }
@@ -13,9 +13,11 @@ export const api={
   projects:()=>request<{items:ProjectConfig[];etag:string}>('/api/projects'),
   createProject:(project:ProjectConfig,etag:string)=>request<{project:ProjectConfig;etag:string}>('/api/projects',{method:'POST',headers:{'If-Match':etag},body:JSON.stringify(project)}),
   updateProject:(projectId:string,project:ProjectConfig,etag:string)=>request<{project:ProjectConfig;etag:string}>(`/api/projects/${encodeURIComponent(projectId)}`,{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify(project)}),
-  detectWorkspace:(path:string)=>request<WorkspaceDetection>('/api/workspaces/detect',{method:'POST',body:JSON.stringify({path})}),
+  detectWorkspace:(locationType:WorkspaceLocationType,location:string)=>request<WorkspaceDetection>('/api/workspaces/detect',{method:'POST',body:JSON.stringify({locationType,location})}),
   preflight:(projectId:string)=>request<PreflightResult>(`/api/projects/${encodeURIComponent(projectId)}/preflight`,{method:'POST'}),
   providers:()=>request<{items:Array<Record<string,unknown>&{id?:string;type?:string;enabled?:boolean}>}>('/api/providers'),
+  createProvider:(provider:Omit<TicketProviderConfig,'id'>,secrets:Record<string,string>,etag:string)=>request<{provider:TicketProviderConfig;etag:string}>('/api/providers',{method:'POST',headers:{'If-Match':etag},body:JSON.stringify({provider,secrets})}),
+  updateProvider:(id:string,provider:TicketProviderConfig,secrets:Record<string,string>,etag:string)=>request<{provider:TicketProviderConfig;etag:string}>(`/api/providers/${encodeURIComponent(id)}`,{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify({provider,secrets})}),
   testProvider:(id:string)=>request<Record<string,unknown>>(`/api/providers/${encodeURIComponent(id)}/test`,{method:'POST'}),
   providerVersions:(id:string)=>request<{providerId:string;items:ProviderVersion[]}>(`/api/providers/${encodeURIComponent(id)}/versions`),
   tasks:()=>request<{items:TaskRecord[]}>('/api/tasks'),

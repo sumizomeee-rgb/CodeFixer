@@ -2,9 +2,10 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://codefixer.local/contracts/config/workspace-detection.schema.json",
   "type": "object",
-  "required": ["path", "ready", "vcsKind", "hostingKind", "summary", "checks"],
+  "required": ["locationType", "location", "ready", "vcsKind", "hostingKind", "summary", "checks"],
   "properties": {
-    "path": {"type": "string"},
+    "locationType": {"enum": ["local", "remote"]},
+    "location": {"type": "string"},
     "ready": {"type": "boolean"},
     "vcsKind": {"enum": ["git", "svn", "unknown"]},
     "hostingKind": {"enum": ["gitlab", "github", "other", "none", "ambiguous"]},

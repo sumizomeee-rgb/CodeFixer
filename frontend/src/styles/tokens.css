@@ -33,6 +33,10 @@
   --side: #a74182;
   --side-soft: #f8eaf3;
 
+  /* 第三方品牌色收敛到令牌层，只用于反馈源徽标；不参与状态语义，也不出现在其他构件上 */
+  --brand-redmine: #9c2e3d;
+  --brand-tapd: #2f66bd;
+
   --r-sharp: 3px;
   --r-sm: 7px;
   --r-md: 11px;
@@ -78,6 +82,9 @@
   --reconcile-soft: #241f3c;
   --side: #dc7ab8;
   --side-soft: #34202d;
+
+  --brand-redmine: #dd7784;
+  --brand-tapd: #7ba6e8;
 
   --shadow-overlay: 0 34px 110px rgba(0, 0, 0, .55);
   --shadow-float: 0 10px 28px rgba(0, 0, 0, .25);

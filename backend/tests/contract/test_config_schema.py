@@ -1,7 +1,10 @@
 import json
 from pathlib import Path
 
+import pytest
 from jsonschema import Draft202012Validator
+
+from codefixer.config import AppConfig
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -16,7 +19,8 @@ def test_default_config__matches_public_schema():
 def test_workspace_detection_contract__accepts_public_response_shape():
     schema = json.loads((ROOT / "contracts/config/workspace-detection.schema.json").read_text("utf-8"))
     response = {
-        "path": "D:/repo",
+        "locationType": "local",
+        "location": "D:/repo",
         "ready": True,
         "vcsKind": "git",
         "hostingKind": "github",
@@ -47,10 +51,10 @@ def test_server_config_contract__accepts_new_project_sources_and_actions():
             "localizationSource": {"id": "knowledge", "type": "directory", "path": "D:/knowledge"},
             "modificationWorkspace": {
                 "id": "workspace",
-                "path": "D:/repo",
+                "locationType": "local",
+                "localPath": "D:/repo",
                 "vcsKind": "git",
                 "hostingKind": "github",
-                "repositoryRoot": "D:/repo",
                 "remoteUrl": "git@github.com:company/repo.git",
                 "allowedRoots": ["."],
                 "deniedRoots": ["generated"],
@@ -68,3 +72,10 @@ def test_server_config_contract__accepts_new_project_sources_and_actions():
     ]
 
     Draft202012Validator(schema).validate(config)
+
+
+def test_runtime_config__rejects_provider_name_as_internal_id():
+    config = json.loads((ROOT / "config/defaults/codefixer.json").read_text("utf-8"))
+    config["ticketProviders"] = [{"id": "Haru", "type": "tapd", "workspaceId": "1"}]
+    with pytest.raises(ValueError, match="系统生成"):
+        AppConfig.model_validate(config)
