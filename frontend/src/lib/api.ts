@@ -13,6 +13,7 @@ export const api={
   projects:()=>request<{items:ProjectConfig[];etag:string}>('/api/projects'),
   createProject:(project:ProjectConfig,etag:string)=>request<{project:ProjectConfig;etag:string}>('/api/projects',{method:'POST',headers:{'If-Match':etag},body:JSON.stringify(project)}),
   updateProject:(projectId:string,project:ProjectConfig,etag:string)=>request<{project:ProjectConfig;etag:string}>(`/api/projects/${encodeURIComponent(projectId)}`,{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify(project)}),
+  setProjectEnabled:(projectId:string,enabled:boolean,etag:string)=>request<{project:ProjectConfig;etag:string}>(`/api/projects/${encodeURIComponent(projectId)}/enabled`,{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify({enabled})}),
   detectWorkspace:(locationType:WorkspaceLocationType,location:string)=>request<WorkspaceDetection>('/api/workspaces/detect',{method:'POST',body:JSON.stringify({locationType,location})}),
   preflight:(projectId:string)=>request<PreflightResult>(`/api/projects/${encodeURIComponent(projectId)}/preflight`,{method:'POST'}),
   providers:()=>request<{items:Array<Record<string,unknown>&{id?:string;type?:string;enabled?:boolean}>}>('/api/providers'),

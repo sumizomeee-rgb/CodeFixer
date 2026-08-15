@@ -189,6 +189,18 @@ export function ProjectsPage() {
     catch (e) { setError(e instanceof Error ? e.message : '检查失败') }
     finally { setBusy('') }
   }
+  const toggleEnabled = async (project:ProjectConfig) => {
+    if (!settings) return
+    const enabled = project.enabled === false
+    setBusy(`enabled:${project.id}`); setError('')
+    try {
+      const result = await api.setProjectEnabled(project.id,enabled,settings.etag)
+      setSettings({...settings,etag:result.etag})
+      setProjects(items => items.map(item => item.id === project.id ? result.project : item))
+      setPreflights(value => { const next = {...value}; delete next[project.id]; return next })
+    } catch (e) { setError(e instanceof Error ? e.message : '流水线状态切换失败') }
+    finally { setBusy('') }
+  }
   const addVerification = () => {
     if (!editor) return
     const steps = editor.verification?.steps ?? []
@@ -221,12 +233,12 @@ export function ProjectsPage() {
       <div className="project-grid refined-project-grid">{projects.map(project => {
         const pf = preflights[project.id]
         const projectActions = project.finalActions ?? []
-        return <article className="project-card project-ledger-card" data-health={pf?.ready ? 'ready' : pf ? 'failed' : project.enabled === false ? 'inactive' : 'unknown'} key={project.id}>
-          <header><div><small>修复流水线</small><h2>{project.name || '未命名流水线'}</h2></div><span className={`readiness-badge ${pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
+        return <article className="project-card project-ledger-card" data-health={project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'} key={project.id}>
+          <header><div><small>修复流水线</small><h2>{project.name || '未命名流水线'}</h2></div><span className={`readiness-badge ${project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{project.enabled === false ? '已停用' : pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
           <div className="project-path-story"><div><span>定位资料</span><b>{project.localizationSource?.path || '未配置'}</b></div><i/><div><span>修改工程 · {sourceLabel(project)}</span><b>{sourceLocation(project)}</b></div></div>
           <div className="delivery-tags">{projectActions.length ? projectActions.map(item => <span key={item.id}>{labelForAction(item)}</span>) : <span className="muted-tag">未配置交付</span>}</div>
           {pf && !pf.ready && <div className="preflight-issue">{pf.checks.find(item => item.status === 'failed')?.summary ?? '配置尚未就绪'}</div>}
-          <footer><button className="ghost action-link" onClick={() => openEditor(project)}>编辑配置</button><button className="ghost framed" disabled={!!busy} onClick={() => void preflight(project.id)}>{busy === `preflight:${project.id}` ? '检查中…' : '运行体检'}</button></footer>
+          <footer><button className={`pipeline-state-button ${project.enabled === false ? 'enable' : 'disable'}`} disabled={!!busy} onClick={() => void toggleEnabled(project)}>{busy === `enabled:${project.id}` ? '切换中…' : project.enabled === false ? '从现在开始启用' : '停用收单'}</button><span className="project-footer-spacer"/><button className="ghost action-link" onClick={() => openEditor(project)}>编辑配置</button><button className="ghost framed" disabled={!!busy || project.enabled === false} onClick={() => void preflight(project.id)}>{busy === `preflight:${project.id}` ? '检查中…' : '运行体检'}</button></footer>
         </article>
       })}</div>}
 

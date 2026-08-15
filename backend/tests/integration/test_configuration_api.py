@@ -6,6 +6,8 @@ import httpx
 from fastapi.testclient import TestClient
 
 from codefixer.config import load_config
+from codefixer.infrastructure.database import connect_database
+from codefixer.infrastructure.task_store import TaskStore
 from codefixer.main import create_app
 
 
@@ -72,6 +74,27 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         rejected = client.put(f"/api/projects/{project_id}", json=incompatible, headers={"If-Match": created.json()["etag"]})
         assert rejected.status_code == 422
         assert "不支持 gitlabPush" in rejected.json()["error"]["message"]
+
+        disabled = client.put(
+            f"/api/projects/{project_id}/enabled",
+            json={"enabled": False},
+            headers={"If-Match": created.json()["etag"]},
+        )
+        assert disabled.status_code == 200
+        assert disabled.json()["project"]["enabled"] is False
+        original_intake = disabled.json()["project"]["intakeStartedAt"]
+
+        enabled = client.put(
+            f"/api/projects/{project_id}/enabled",
+            json={"enabled": True},
+            headers={"If-Match": disabled.json()["etag"]},
+        )
+        assert enabled.status_code == 200
+        assert enabled.json()["project"]["enabled"] is True
+        assert enabled.json()["project"]["intakeStartedAt"] != original_intake
+        cursor = client.app.state.db_path
+        with connect_database(cursor) as connection:
+            assert TaskStore(connection).get_cursor("tapd") == enabled.json()["project"]["intakeStartedAt"]
 
 def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: Path, monkeypatch):
     test_client, _ = _client(tmp_path, monkeypatch)
