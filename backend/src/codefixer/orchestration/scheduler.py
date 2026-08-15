@@ -15,6 +15,20 @@ from codefixer.orchestration.recovery import RecoveryService
 DEFAULT_MAX_CONCURRENT_TASKS = 8
 
 
+def _active_provider_ids(projects: list[dict[str, object]]) -> set[str]:
+    provider_ids: set[str] = set()
+    for project in projects:
+        if project.get("enabled", True) is False:
+            continue
+        for rule in project.get("routingRules") or []:
+            if not isinstance(rule, dict):
+                continue
+            provider_id = str(rule.get("providerRef") or "").strip()
+            if provider_id:
+                provider_ids.add(provider_id)
+    return provider_ids
+
+
 class Scheduler:
     def __init__(
         self,
@@ -52,9 +66,14 @@ class Scheduler:
         self._reap()
         loaded = self.config_store.reload()
         now = time.monotonic()
+        active_provider_ids = _active_provider_ids(loaded.config.projects)
         for provider in loaded.config.ticketProviders:
             provider_id = str(provider.get("id", ""))
-            if not provider_id or provider.get("enabled", True) is False:
+            if (
+                not provider_id
+                or provider.get("enabled", True) is False
+                or provider_id not in active_provider_ids
+            ):
                 continue
             interval = max(5, int(provider.get("pollIntervalSeconds", 60)))
             previous = self._provider_last_poll.get(provider_id, float("-inf"))
