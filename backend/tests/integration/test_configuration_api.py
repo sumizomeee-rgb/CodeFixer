@@ -2,6 +2,7 @@ import json
 import subprocess
 from pathlib import Path
 
+import httpx
 from fastapi.testclient import TestClient
 
 from codefixer.config import load_config
@@ -98,3 +99,39 @@ def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: 
         assert renamed.status_code == 200
         assert renamed.json()["provider"]["id"] == provider["id"]
         assert renamed.json()["provider"]["name"] == "Haru TAPD"
+
+
+def test_provider_versions__explains_tapd_rate_limit(tmp_path: Path, monkeypatch):
+    test_client, _ = _client(tmp_path, monkeypatch)
+    with test_client as client:
+        etag = client.get("/api/settings").json()["etag"]
+        created = client.post(
+            "/api/providers",
+            headers={"If-Match": etag},
+            json={
+                "provider": {
+                    "name": "Haru TAPD",
+                    "type": "tapd",
+                    "workspaceId": "45286624",
+                    "auth": {"mode": "oauth"},
+                },
+                "secrets": {"token": "token"},
+            },
+        )
+        provider_id = created.json()["provider"]["id"]
+
+        def rate_limited(*args, **kwargs):
+            del args, kwargs
+            request = httpx.Request("GET", "https://api.tapd.cn/iterations")
+            response = httpx.Response(429, request=request)
+            raise httpx.HTTPStatusError("rate limited", request=request, response=response)
+
+        monkeypatch.setattr(
+            "codefixer.adapters.tickets.tapd.adapter.TapdTicketProvider.list_versions",
+            rate_limited,
+        )
+        response = client.get(f"/api/providers/{provider_id}/versions")
+
+    assert response.status_code == 429
+    assert response.json()["error"]["code"] == "provider_rate_limited"
+    assert "全部版本" in response.json()["error"]["message"]

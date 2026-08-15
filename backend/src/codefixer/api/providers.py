@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
+import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
@@ -152,12 +153,29 @@ def list_provider_versions(provider_id: str, request: Request) -> dict[str, obje
     try:
         provider = build_ticket_provider(config, request.app.state.config_store.get_secret)
         return {"providerId": provider_id, "items": provider.list_versions()}
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "code": "provider_rate_limited",
+                    "message": "TAPD 请求过于频繁，暂时无法加载版本；“全部版本”不受影响，请稍后重试",
+                },
+            ) from exc
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "code": "provider_versions_unavailable",
+                "message": f"无法读取反馈源“{config.get('name') or provider_id}”的版本",
+                "reason": str(exc),
+            },
+        ) from exc
     except Exception as exc:
         raise HTTPException(
             status_code=503,
             detail={
                 "code": "provider_versions_unavailable",
-                "message": f"无法读取反馈源版本：{provider_id}",
+                "message": f"无法读取反馈源“{config.get('name') or provider_id}”的版本",
                 "reason": str(exc),
             },
         ) from exc
