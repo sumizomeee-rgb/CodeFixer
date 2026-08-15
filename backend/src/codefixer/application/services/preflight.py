@@ -197,6 +197,12 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     for key, label in (("technologyTag", "技术域"), ("submitterName", "提交人姓名")):
         if not str(delivery_log.get(key) or "").strip():
             raise ValueError(f"交付日志缺少{label}")
+    verification = normalized.get("verification") or {}
+    verification_steps = verification.get("steps") or []
+    allow_no_tests = bool(verification.get("allowNoAutomatedTests"))
+    no_tests_reason = str(verification.get("reason") or "").strip()
+    if not verification_steps and not (allow_no_tests and no_tests_reason):
+        raise ValueError("请添加完成后的自动检查，或声明暂无自动检查并填写原因")
     for action in actions:
         action_type = str(action.get("type", ""))
         if action_type not in allowed:

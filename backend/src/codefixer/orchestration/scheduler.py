@@ -13,6 +13,7 @@ from codefixer.orchestration.factory import RunExecutor
 from codefixer.orchestration.recovery import RecoveryService
 
 DEFAULT_MAX_CONCURRENT_TASKS = 8
+PROVIDER_FAILURE_BACKOFF_SECONDS = 15 * 60
 
 
 def _active_provider_ids(projects: list[dict[str, object]]) -> set[str]:
@@ -48,6 +49,7 @@ class Scheduler:
         self._loop_task: asyncio.Task[None] | None = None
         self._active: dict[str, asyncio.Task[object]] = {}
         self._provider_last_poll: dict[str, float] = {}
+        self._provider_retry_after: dict[str, float] = {}
 
     def start(self) -> None:
         if self._loop_task is None:
@@ -73,6 +75,7 @@ class Scheduler:
                 not provider_id
                 or provider.get("enabled", True) is False
                 or provider_id not in active_provider_ids
+                or now < self._provider_retry_after.get(provider_id, 0)
             ):
                 continue
             interval = max(5, int(provider.get("pollIntervalSeconds", 60)))
@@ -85,7 +88,11 @@ class Scheduler:
             except Exception:
                 # A broken ticket source must not starve other providers or already-queued repairs.
                 # 管理员仍可通过“测试连接”看到反馈源的具体连接错误。
+                self._provider_retry_after[provider_id] = (
+                    time.monotonic() + PROVIDER_FAILURE_BACKOFF_SECONDS
+                )
                 continue
+            self._provider_retry_after.pop(provider_id, None)
 
         configured_limit = getattr(
             loaded.config.execution, "maxConcurrentTasks", DEFAULT_MAX_CONCURRENT_TASKS
@@ -148,7 +155,21 @@ class Scheduler:
 
     def _poll_provider(self, provider: dict[str, object]) -> None:
         loaded = self.config_store.reload()
+        provider_id = str(provider.get("id") or "")
+        intake_times = [
+            str(project.get("intakeStartedAt") or "").strip()
+            for project in loaded.config.projects
+            if project.get("enabled", True) is not False
+            and any(
+                isinstance(rule, dict) and str(rule.get("providerRef") or "") == provider_id
+                for rule in project.get("routingRules") or []
+            )
+            and str(project.get("intakeStartedAt") or "").strip()
+        ]
         with connect_database(self.db_path) as connection:
+            store = TaskStore(connection)
+            if store.get_cursor(provider_id) is None and intake_times:
+                store.set_cursor(provider_id, min(intake_times))
             poll_configured_provider(
                 connection,
                 dict(provider),

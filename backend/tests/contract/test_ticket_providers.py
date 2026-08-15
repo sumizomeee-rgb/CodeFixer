@@ -144,6 +144,29 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
     assert "/bugs/get_link_bugs" in paths
 
 
+def test_tapd_provider__uses_intake_cursor_as_server_side_modified_filter():
+    seen_modified: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/bugs":
+            seen_modified.append(str(request.url.params.get("modified")))
+            return httpx.Response(200, json={"status": 1, "data": []})
+        if request.url.path == "/iterations":
+            return httpx.Response(200, json={"status": 1, "data": []})
+        raise AssertionError(request.url)
+
+    client = httpx.Client(base_url="https://api.tapd.cn", transport=httpx.MockTransport(handler))
+    provider = TapdTicketProvider(
+        {"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic"}},
+        lambda _: None,
+        client,
+    )
+
+    provider.poll("2026-08-15T18:53:27+08:00")
+
+    assert seen_modified == [">=2026-08-15 18:53:27"]
+
+
 def test_tapd_provider__lists_workspace_versions():
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.url.path == "/iterations"

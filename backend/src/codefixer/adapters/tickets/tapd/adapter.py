@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
 import re
 from typing import Any
 
@@ -173,7 +174,14 @@ class TapdTicketProvider:
         }
 
     def poll(self, cursor: str | None) -> TicketBatch:
-        bugs = self._paged_objects("/bugs", "Bug", {"workspace_id": self.workspace_id})
+        bug_params: dict[str, object] = {"workspace_id": self.workspace_id}
+        if cursor:
+            try:
+                parsed_cursor = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
+                bug_params["modified"] = ">=" + parsed_cursor.strftime("%Y-%m-%d %H:%M:%S")
+            except ValueError:
+                bug_params["modified"] = ">=" + cursor
+        bugs = self._paged_objects("/bugs", "Bug", bug_params)
         iteration_names = self._iteration_names()
         ineligible_statuses = {str(value) for value in self.config.get("ineligibleStatuses", [])}
         tickets: list[IngestedTicket] = []

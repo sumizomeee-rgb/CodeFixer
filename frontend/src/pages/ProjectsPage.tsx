@@ -205,7 +205,7 @@ export function ProjectsPage() {
   const stepComplete = {
     1:Boolean(editor?.name?.trim() && route?.providerRef && (versionFilter.mode === 'all' || versionFilter.versions.length > 0)),
     2:Boolean(editor?.localizationSource?.path),
-    3:Boolean((editor?.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace.remoteUrl : editor?.modificationWorkspace?.localPath) && detection?.ready),
+    3:Boolean((editor?.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace.remoteUrl : editor?.modificationWorkspace?.localPath) && detection?.ready && ((editor?.verification?.steps ?? []).length > 0 || (editor?.verification?.allowNoAutomatedTests && editor.verification.reason?.trim()))),
     4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
   }
   const canSave = stepComplete[1] && stepComplete[2] && stepComplete[3] && stepComplete[4]
