@@ -104,6 +104,18 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     """校验项目的物理来源与动作能力，并固化服务端重新探测的事实。"""
 
     normalized = deepcopy(project)
+    poll_interval = normalized.get("pollIntervalSeconds", 20 * 60)
+    if isinstance(poll_interval, bool):
+        raise ValueError("收单冷却时间必须是整数分钟")
+    try:
+        poll_interval = int(poll_interval)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("收单冷却时间必须是整数分钟") from exc
+    if poll_interval % 60 != 0:
+        raise ValueError("收单冷却时间必须使用完整分钟")
+    if poll_interval < 60 or poll_interval > 7 * 24 * 60 * 60:
+        raise ValueError("收单冷却时间必须在 1 分钟到 7 天之间")
+    normalized["pollIntervalSeconds"] = poll_interval
     for rule in normalized.get("routingRules") or []:
         if not isinstance(rule, dict):
             raise ValueError("工单接收规则格式无效")

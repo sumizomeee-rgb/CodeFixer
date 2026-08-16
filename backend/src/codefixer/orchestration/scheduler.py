@@ -16,6 +16,7 @@ from codefixer.orchestration.factory import RunExecutor
 from codefixer.orchestration.recovery import RecoveryService
 
 DEFAULT_MAX_CONCURRENT_TASKS = 8
+DEFAULT_PIPELINE_POLL_INTERVAL_SECONDS = 20 * 60
 PROVIDER_FAILURE_BACKOFF_SECONDS = 15 * 60
 PROJECT_HEALTH_INTERVAL = timedelta(hours=3)
 
@@ -48,18 +49,30 @@ def _project_health_due(
     return checked < latest_boundary
 
 
-def _active_provider_ids(projects: list[dict[str, object]]) -> set[str]:
-    provider_ids: set[str] = set()
+def _active_provider_intervals(projects: list[dict[str, object]]) -> dict[str, int]:
+    provider_intervals: dict[str, int] = {}
     for project in projects:
         if project.get("enabled", True) is False:
             continue
+        interval = max(
+            60,
+            int(
+                project.get(
+                    "pollIntervalSeconds",
+                    DEFAULT_PIPELINE_POLL_INTERVAL_SECONDS,
+                )
+            ),
+        )
         for rule in project.get("routingRules") or []:
             if not isinstance(rule, dict):
                 continue
             provider_id = str(rule.get("providerRef") or "").strip()
             if provider_id:
-                provider_ids.add(provider_id)
-    return provider_ids
+                provider_intervals[provider_id] = min(
+                    interval,
+                    provider_intervals.get(provider_id, interval),
+                )
+    return provider_intervals
 
 
 class Scheduler:
@@ -109,17 +122,17 @@ class Scheduler:
             and bool((health.get(str(project.get("id") or "")) or {}).get("ready"))
         ]
         now = time.monotonic()
-        active_provider_ids = _active_provider_ids(healthy_projects)
+        active_provider_intervals = _active_provider_intervals(healthy_projects)
         for provider in loaded.config.ticketProviders:
             provider_id = str(provider.get("id", ""))
             if (
                 not provider_id
                 or provider.get("enabled", True) is False
-                or provider_id not in active_provider_ids
+                or provider_id not in active_provider_intervals
                 or now < self._provider_retry_after.get(provider_id, 0)
             ):
                 continue
-            interval = max(5, int(provider.get("pollIntervalSeconds", 60)))
+            interval = active_provider_intervals[provider_id]
             previous = self._provider_last_poll.get(provider_id, float("-inf"))
             if now - previous < interval:
                 continue

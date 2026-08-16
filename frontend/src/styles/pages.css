@@ -260,6 +260,13 @@
 .workspace-location-switch b { font-size: 12px; }
 .workspace-location-switch small { margin-top: 4px; color: var(--tertiary); font-size: 10px; }
 .path-field { display: block; }
+.pipeline-cooldown-field { grid-column: 1 / -1; }
+.pipeline-cooldown-field > div { display: flex; align-items: center; width: min(220px,100%); margin-top: 7px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); transition: border-color var(--fast), box-shadow var(--fast); }
+.pipeline-cooldown-field > div:hover { border-color: var(--line-strong); }
+.pipeline-cooldown-field > div:focus-within { border-color: var(--signal); box-shadow: 0 0 0 3px color-mix(in srgb,var(--signal) 13%,transparent); }
+.pipeline-cooldown-field > div input { min-height: 40px; margin: 0; border: 0; box-shadow: none; }
+.pipeline-cooldown-field > div input:focus { box-shadow: none; }
+.pipeline-cooldown-field > div span { flex: none; padding: 0 12px; border-left: 1px solid var(--line); color: var(--tertiary); font-size: 11px; }
 .path-field > span { display: block; margin-bottom: 7px; }
 .path-field > div { display: flex; gap: 9px; }
 .path-field input { flex: 1; min-width: 0; margin: 0; }

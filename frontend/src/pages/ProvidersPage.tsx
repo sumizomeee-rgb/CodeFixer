@@ -61,11 +61,9 @@ export function ProvidersPage() {
     const existing = editingId ? settings.config.ticketProviders.find(item => item.id === editingId) : undefined
     const provider = type === 'redmine' ? {
       ...existing,name,type,enabled:existing?.enabled ?? true,baseUrl,
-      pollIntervalSeconds:Number(existing?.pollIntervalSeconds ?? 60),
     } : {
       ...existing,name,type,enabled:existing?.enabled ?? true,workspaceId,
       auth:{mode:authMode},
-      pollIntervalSeconds:Number(existing?.pollIntervalSeconds ?? 60),
     }
     try {
       setBusy('save')

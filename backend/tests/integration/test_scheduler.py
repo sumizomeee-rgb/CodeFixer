@@ -11,7 +11,11 @@ from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.database import apply_migrations, connect_database
 from codefixer.infrastructure.project_health_store import ProjectHealthStore
 from codefixer.infrastructure.task_store import TaskStore
-from codefixer.orchestration.scheduler import Scheduler, _project_health_due
+from codefixer.orchestration.scheduler import (
+    Scheduler,
+    _active_provider_intervals,
+    _project_health_due,
+)
 
 
 def _loaded(tmp_path: Path, config: AppConfig) -> LoadedConfig:
@@ -114,6 +118,53 @@ def test_project_health_schedule_is_anchored_to_creation_time():
     assert _project_health_due(created.isoformat(), created.isoformat(), created + timedelta(hours=3)) is True
     assert _project_health_due(created.isoformat(), (created + timedelta(hours=3, minutes=1)).isoformat(), created + timedelta(hours=5)) is False
     assert _project_health_due(created.isoformat(), (created + timedelta(hours=3, minutes=1)).isoformat(), created + timedelta(hours=6)) is True
+
+
+def test_active_provider_interval_defaults_to_twenty_minutes_and_uses_shortest_pipeline():
+    projects = [
+        {
+            "id": "default",
+            "routingRules": [{"providerRef": "provider-tapd"}],
+        },
+        {
+            "id": "faster",
+            "pollIntervalSeconds": 300,
+            "routingRules": [{"providerRef": "provider-tapd"}],
+        },
+        {
+            "id": "other",
+            "pollIntervalSeconds": 1800,
+            "routingRules": [{"providerRef": "provider-redmine"}],
+        },
+        {
+            "id": "disabled",
+            "enabled": False,
+            "pollIntervalSeconds": 60,
+            "routingRules": [{"providerRef": "provider-redmine"}],
+        },
+    ]
+
+    assert _active_provider_intervals(projects) == {
+        "provider-tapd": 300,
+        "provider-redmine": 1800,
+    }
+
+
+def test_active_provider_interval_has_no_provider_type_branch():
+    assert _active_provider_intervals(
+        [
+            {
+                "id": "default",
+                "routingRules": [
+                    {"providerRef": "provider-tapd"},
+                    {"providerRef": "provider-redmine"},
+                ],
+            }
+        ]
+    ) == {
+        "provider-tapd": 1200,
+        "provider-redmine": 1200,
+    }
 
 
 def test_scheduler_does_not_poll_provider_when_pipeline_health_is_red(tmp_path: Path):

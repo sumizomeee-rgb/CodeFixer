@@ -7,7 +7,7 @@ export type WorkspaceLocationType = 'local' | 'remote'
 
 export type ExecutableBinding = { command?: string[]; versionArgs?: string[]; versionConstraint?: string | null; versionRegex?: string }
 export type AgentProfileConfig = { id:string; runtime:AgentRuntime; executableRef:string; model?:string; effort?:string; timeoutSeconds?:number; maxBudgetUsd?:number; extraArgs?:string[] }
-export type TicketProviderConfig = Record<string, unknown> & { id:string; name:string; type:'redmine'|'tapd'; enabled?:boolean; pollIntervalSeconds?:number }
+export type TicketProviderConfig = Record<string, unknown> & { id:string; name:string; type:'redmine'|'tapd'; enabled?:boolean }
 export type ProviderVersion = { id:string; name:string }
 export type VersionFilter = { mode:'all'|'selected'; versions:ProviderVersion[] }
 export type RoutingRule = { id:string; providerRef:string; priority:number; catchAll?:boolean; conditions?:Array<{field:string;operator:RoutingOperator;value?:unknown}>; versionFilter?:VersionFilter }
@@ -57,6 +57,7 @@ export type ProjectConfig = {
   enabled?:boolean
   createdAt?:string
   intakeStartedAt?:string
+  pollIntervalSeconds?:number
   routingRules?:RoutingRule[]
   localizationSource?:LocalizationSourceConfig
   modificationWorkspace?:ModificationWorkspaceConfig

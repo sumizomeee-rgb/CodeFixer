@@ -55,6 +55,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert project_id != "demo"
         assert created.json()["project"]["intakeStartedAt"]
         assert created.json()["project"]["createdAt"] == created.json()["project"]["intakeStartedAt"]
+        assert created.json()["project"]["pollIntervalSeconds"] == 1200
         assert created.json()["project"]["verification"] == {
             "timeoutSeconds": 1200,
             "steps": [],
@@ -71,6 +72,13 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         check_ids = {item["id"] for item in created.json()["health"]["checks"]}
         assert "agent.current" in check_ids
         assert not any(item.startswith("agent.scopeDiscovery") for item in check_ids)
+        edited = client.put(
+            f"/api/projects/{project_id}",
+            json={**created.json()["project"], "pollIntervalSeconds": 1800},
+            headers={"If-Match": created.json()["etag"]},
+        )
+        assert edited.status_code == 200
+        assert edited.json()["project"]["pollIntervalSeconds"] == 1800
         secret = client.put("/api/secrets/company-gitlab", json={"value": "token-value"})
         assert secret.status_code == 200
         public = client.get("/api/settings").json()
@@ -78,14 +86,14 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert "token-value" not in json.dumps(public)
 
         incompatible = {**project, "finalActions": [{"id": "push", "type": "gitlabPush"}]}
-        rejected = client.put(f"/api/projects/{project_id}", json=incompatible, headers={"If-Match": created.json()["etag"]})
+        rejected = client.put(f"/api/projects/{project_id}", json=incompatible, headers={"If-Match": edited.json()["etag"]})
         assert rejected.status_code == 422
         assert "不支持 gitlabPush" in rejected.json()["error"]["message"]
 
         disabled = client.put(
             f"/api/projects/{project_id}/enabled",
             json={"enabled": False},
-            headers={"If-Match": created.json()["etag"]},
+            headers={"If-Match": edited.json()["etag"]},
         )
         assert disabled.status_code == 200
         assert disabled.json()["project"]["enabled"] is False
@@ -111,7 +119,7 @@ def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: 
             "/api/providers",
             headers={"If-Match": etag},
             json={
-                "provider": {"name": "Haru", "type": "tapd", "workspaceId": "45286624", "auth": {"mode": "oauth"}},
+                "provider": {"name": "Haru", "type": "tapd", "workspaceId": "45286624", "auth": {"mode": "oauth"}, "pollIntervalSeconds": 60},
                 "secrets": {"token": "token-value"},
             },
         )
@@ -120,6 +128,7 @@ def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: 
         assert provider["id"].startswith("provider-")
         assert provider["id"] != provider["name"]
         assert provider["name"] == "Haru"
+        assert "pollIntervalSeconds" not in provider
 
         renamed = client.put(
             f"/api/providers/{provider['id']}",

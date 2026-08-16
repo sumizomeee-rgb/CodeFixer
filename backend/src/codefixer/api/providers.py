@@ -34,6 +34,7 @@ def _normalize_provider(raw: dict[str, Any], provider_id: str, existing: dict[st
     if not name:
         raise ValueError("反馈源名称不能为空")
     provider = {**(existing or {}), **raw, "id": provider_id, "name": name, "type": provider_type}
+    provider.pop("pollIntervalSeconds", None)
     prefix = provider_id
     if provider_type == "redmine":
         if not str(provider.get("baseUrl", "")).strip():

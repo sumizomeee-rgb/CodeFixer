@@ -19,6 +19,7 @@ const emptyProject = (): ProjectConfig => ({
   id: '',
   name: '',
   enabled: true,
+  pollIntervalSeconds: 20 * 60,
   routingRules: [{ id: 'primary-route', providerRef: '', priority: 100, catchAll: true, conditions: [], versionFilter: {mode:'all',versions:[]} }],
   localizationSource: { id: 'localization-source', type: 'directory', path: '', readOnly: true },
   modificationWorkspace: { id: 'modification-workspace', locationType: 'local', localPath: '', allowedRoots: ['.'], deniedRoots: [], allowedExtensions: [] },
@@ -208,7 +209,7 @@ export function ProjectsPage() {
     finally { setBusy('') }
   }
   const stepComplete = {
-    1:Boolean(editor?.name?.trim() && route?.providerRef && (versionFilter.mode === 'all' || versionFilter.versions.length > 0)),
+    1:Boolean(editor?.name?.trim() && route?.providerRef && Number.isInteger(editor?.pollIntervalSeconds) && (editor?.pollIntervalSeconds ?? 0) >= 60 && (editor?.pollIntervalSeconds ?? 0) <= 7 * 24 * 60 * 60 && (versionFilter.mode === 'all' || versionFilter.versions.length > 0)),
     2:Boolean(editor?.localizationSource?.path),
     3:Boolean((editor?.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace.remoteUrl : editor?.modificationWorkspace?.localPath) && detection?.ready),
     4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
@@ -248,7 +249,7 @@ export function ProjectsPage() {
         <div className="workbench-body">
           {error && <button type="button" className="workbench-error" onClick={() => setError('')}><StatusIcon status="failed"/><span><b>当前步骤未完成</b><small>{error}</small></span><i aria-hidden="true">×</i></button>}
           {step === 1 && <div className="step-panel"><div className="step-intro"><span>01</span><div><h3>先确定一张工单进入哪条线</h3><p>反馈源负责收取正文；流水线规则决定由哪套定位、修改和交付策略处理。</p></div></div>
-            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value,versionFilter:{mode:'all',versions:[]}})}><option value="">选择 Redmine / TAPD 来源</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label></div>
+            <div className="form-grid polished-form"><label>流水线名称<input value={editor.name ?? ''} onChange={e => setEditor({...editor,name:e.target.value})} placeholder="例如：客户端 Lua 修复"/></label><label>工单反馈源<select value={route.providerRef} onChange={e => updateRule({providerRef:e.target.value,versionFilter:{mode:'all',versions:[]}})}><option value="">选择 Redmine / TAPD 来源</option>{providers.map(provider => <option key={provider.id} value={provider.id}>{provider.name}</option>)}</select><small>Token 与账号保存在当前机器，不进入公开仓库。</small></label><label className="pipeline-cooldown-field">收单冷却时间<div><input type="number" min="1" max="10080" step="1" value={Math.max(1,Math.round((editor.pollIntervalSeconds ?? 20 * 60) / 60))} onChange={e => setEditor({...editor,pollIntervalSeconds:Math.min(10080,Math.max(1,Math.round(Number(e.target.value || 1)))) * 60})}/><span>分钟</span></div><small>每隔多久增量检查一次新工单；默认 20 分钟。</small></label></div>
             {route.providerRef && <section className="version-filter" aria-labelledby="version-filter-title"><header><div><b id="version-filter-title">接收版本</b><small>按工单的合入版本 / 修复版本筛选，不需要填写字段名。</small></div>{versionLoad === 'loading' && <span className="version-load-state">正在读取…</span>}</header>
               <div className="version-mode-switch"><button type="button" className={versionFilter.mode === 'all' ? 'selected' : ''} aria-pressed={versionFilter.mode === 'all'} onClick={() => setVersionMode('all')}><span className="choice-check">{versionFilter.mode === 'all' ? '✓' : ''}</span><div><b>全部版本</b><small>默认；也接收尚未填写修复版本的工单</small></div></button><button type="button" className={versionFilter.mode === 'selected' ? 'selected' : ''} aria-pressed={versionFilter.mode === 'selected'} disabled={versionLoad !== 'ready' || versions.length === 0} onClick={() => setVersionMode('selected')}><span className="choice-check">{versionFilter.mode === 'selected' ? '✓' : ''}</span><div><b>指定版本</b><small>{versionLoad === 'ready' && versions.length > 0 ? `从 ${versions.length} 个可用版本中多选` : '读取版本后可选'}</small></div></button></div>
               {versionLoad === 'failed' && <div className="version-load-error"><span>{versionError}<small>当前选择“全部版本”时仍可继续配置和保存。</small></span><button type="button" className="ghost action-link" onClick={() => setVersionRetry(value => value + 1)}>重试</button></div>}
