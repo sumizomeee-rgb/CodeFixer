@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from codefixer.api.common import config_store, require_if_match
 from codefixer.application.services.preflight import normalize_project_configuration, run_project_preflight
 from codefixer.infrastructure.database import connect_database
+from codefixer.infrastructure.project_health_store import ProjectHealthStore
 from codefixer.infrastructure.task_store import TaskStore
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
@@ -34,11 +35,36 @@ def _new_project_id(store: Any) -> str:
             return project_id
 
 
+def _check_project(request: Request, project: dict[str, Any]) -> dict[str, Any]:
+    result = run_project_preflight(request.app.state.config_store.loaded, project)
+    if not result["ready"]:
+        raise HTTPException(
+            status_code=422,
+            detail={"code": "project_not_ready", "message": result["summary"]},
+        )
+    return result
+
+
+def _save_health(request: Request, result: dict[str, Any]) -> dict[str, Any]:
+    with connect_database(request.app.state.db_path) as connection:
+        return ProjectHealthStore(connection).put(result)
+
+
 @router.get("")
 def list_projects(request: Request, response: Response) -> dict[str, object]:
     store = config_store(request)
+    projects = store.loaded.config.projects
+    with connect_database(request.app.state.db_path) as connection:
+        health_store = ProjectHealthStore(connection)
+        health = health_store.list()
+        for project in projects:
+            project_id = str(project.get("id") or "")
+            if project_id and project_id not in health:
+                health[project_id] = health_store.put(
+                    run_project_preflight(store.loaded, dict(project))
+                )
     response.headers["ETag"] = f'"{store.etag}"'
-    return {"items": store.loaded.config.projects, "etag": store.etag}
+    return {"items": projects, "etag": store.etag, "health": health}
 
 
 @router.post("", status_code=201)
@@ -53,14 +79,20 @@ def create_project(project: dict[str, Any], request: Request, response: Response
                 "intakeStartedAt": datetime.now(UTC).isoformat(),
             }
         )
+        health = _check_project(request, normalized)
         store.create_project(normalized)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "invalid_project", "message": str(exc)}) from exc
     except KeyError as exc:
         raise HTTPException(status_code=409, detail={"code": "project_exists", "message": f"项目已存在：{exc.args[0]}"}) from exc
     request.app.state.loaded_config = store.loaded
+    stored_health = _save_health(request, health)
     response.headers["ETag"] = f'"{store.etag}"'
-    return {"project": store.get_project(str(normalized.get("id"))), "etag": store.etag}
+    return {
+        "project": store.get_project(str(normalized.get("id"))),
+        "etag": store.etag,
+        "health": stored_health,
+    }
 
 
 @router.put("/{project_id}")
@@ -79,14 +111,16 @@ def update_project(project_id: str, project: dict[str, Any], request: Request, r
                 or datetime.now(UTC).isoformat(),
             }
         )
+        health = _check_project(request, normalized)
         store.update_project(project_id, normalized)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail={"code": "invalid_project", "message": str(exc)}) from exc
     except KeyError as exc:
         raise HTTPException(status_code=404, detail={"code": "project_not_found", "message": f"项目不存在：{project_id}"}) from exc
     request.app.state.loaded_config = store.loaded
+    stored_health = _save_health(request, health)
     response.headers["ETag"] = f'"{store.etag}"'
-    return {"project": store.get_project(project_id), "etag": store.etag}
+    return {"project": store.get_project(project_id), "etag": store.etag, "health": stored_health}
 
 
 @router.put("/{project_id}/enabled")
@@ -106,13 +140,16 @@ def set_project_enabled(
         )
     was_enabled = existing.get("enabled", True) is not False
     if body.enabled == was_enabled:
+        with connect_database(request.app.state.db_path) as connection:
+            health = ProjectHealthStore(connection).get(project_id)
         response.headers["ETag"] = f'"{store.etag}"'
-        return {"project": existing, "etag": store.etag}
+        return {"project": existing, "etag": store.etag, "health": health}
 
     changed_at = datetime.now(UTC).isoformat()
     updated = {**existing, "enabled": body.enabled}
     if body.enabled:
         updated["intakeStartedAt"] = changed_at
+        health = _check_project(request, updated)
 
     provider_refs = _provider_refs(existing)
     other_active_refs = {
@@ -128,14 +165,10 @@ def set_project_enabled(
             for provider_ref in provider_refs - other_active_refs:
                 cursors.set_cursor(provider_ref, changed_at)
     request.app.state.loaded_config = store.loaded
+    stored_health = _save_health(request, health) if body.enabled else None
     response.headers["ETag"] = f'"{store.etag}"'
-    return {"project": store.get_project(project_id), "etag": store.etag}
-
-
-@router.post("/{project_id}/preflight")
-def preflight_project(project_id: str, request: Request) -> dict[str, object]:
-    store = config_store(request)
-    project = store.get_project(project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail={"code": "project_not_found", "message": f"项目不存在：{project_id}"})
-    return run_project_preflight(store.loaded, project)
+    return {
+        "project": store.get_project(project_id),
+        "etag": store.etag,
+        "health": stored_health,
+    }

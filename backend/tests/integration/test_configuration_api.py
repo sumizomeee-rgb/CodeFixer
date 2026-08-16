@@ -63,11 +63,11 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert created.json()["project"]["routingRules"][0]["versionFilter"] == {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}
         assert created.json()["project"]["modificationWorkspace"]["vcsKind"] == "git"
         assert created.json()["project"]["modificationWorkspace"]["hostingKind"] == "other"
-        assert client.get("/api/projects").json()["items"][0]["id"] == project_id
-        preflight = client.post(f"/api/projects/{project_id}/preflight")
-        assert preflight.status_code == 200
-        assert preflight.json()["ready"] is True
-        check_ids = {item["id"] for item in preflight.json()["checks"]}
+        assert created.json()["health"]["ready"] is True
+        projects = client.get("/api/projects").json()
+        assert projects["items"][0]["id"] == project_id
+        assert projects["health"][project_id]["ready"] is True
+        check_ids = {item["id"] for item in created.json()["health"]["checks"]}
         assert "agent.current" in check_ids
         assert not any(item.startswith("agent.scopeDiscovery") for item in check_ids)
         secret = client.put("/api/secrets/company-gitlab", json={"value": "token-value"})

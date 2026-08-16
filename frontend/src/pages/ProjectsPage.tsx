@@ -67,9 +67,20 @@ export function ProjectsPage() {
   const reload = async () => {
     const [p,s] = await Promise.all([api.projects(),api.settings()])
     setProjects(p.items)
+    setPreflights(p.health ?? {})
     setSettings(s)
   }
   useEffect(() => { void reload().catch(e => setError(e instanceof Error ? e.message : '加载失败')) }, [])
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (editor) return
+      void api.projects().then(result => {
+        setProjects(result.items)
+        setPreflights(result.health ?? {})
+      }).catch(() => {})
+    },5000)
+    return () => window.clearInterval(timer)
+  },[editor])
 
   const providers = useMemo(() => settings?.config.ticketProviders.filter(item => item.id) ?? [],[settings])
   const route = editor ? firstRule(editor) : null
@@ -173,16 +184,10 @@ export function ProjectsPage() {
     try {
       const result = editingId ? await api.updateProject(editingId,editor,settings.etag) : await api.createProject(editor,settings.etag)
       setSettings({...settings,etag:result.etag})
+      setPreflights(value => ({...value,[result.project.id]:result.health}))
       closeEditor()
       await reload()
-      void preflight(result.project.id)
     } catch (e) { setError(e instanceof ApiError ? e.message : e instanceof Error ? e.message : '保存失败') }
-    finally { setBusy('') }
-  }
-  const preflight = async (id:string) => {
-    setBusy(`preflight:${id}`)
-    try { const result = await api.preflight(id); setPreflights(value => ({...value,[id]:result})) }
-    catch (e) { setError(e instanceof Error ? e.message : '检查失败') }
     finally { setBusy('') }
   }
   const toggleEnabled = async (project:ProjectConfig) => {
@@ -193,7 +198,12 @@ export function ProjectsPage() {
       const result = await api.setProjectEnabled(project.id,enabled,settings.etag)
       setSettings({...settings,etag:result.etag})
       setProjects(items => items.map(item => item.id === project.id ? result.project : item))
-      setPreflights(value => { const next = {...value}; delete next[project.id]; return next })
+      setPreflights(value => {
+        const next = {...value}
+        if (result.health) next[project.id] = result.health
+        else delete next[project.id]
+        return next
+      })
     } catch (e) { setError(e instanceof Error ? e.message : '流水线状态切换失败') }
     finally { setBusy('') }
   }
@@ -216,12 +226,12 @@ export function ProjectsPage() {
       <div className="project-grid">{projects.map(project => {
         const pf = preflights[project.id]
         const projectActions = project.finalActions ?? []
-        return <article className="project-card" data-health={project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'} key={project.id}>
-          <header><h2>{project.name || '未命名流水线'}</h2><span className={`readiness-badge ${project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{project.enabled === false ? '已停用' : pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
-          <div className="project-card-actions"><button className={`pipeline-state-button ${project.enabled === false ? 'enable' : 'disable'}`} disabled={busy === `enabled:${project.id}`} onClick={() => void toggleEnabled(project)}>{busy === `enabled:${project.id}` ? '切换中…' : project.enabled === false ? '从现在开始启用' : '停用收单'}</button><button className="ghost framed" onClick={() => openEditor(project)}>编辑配置</button><button className="ghost framed" disabled={busy === `preflight:${project.id}` || project.enabled === false} onClick={() => void preflight(project.id)}>{busy === `preflight:${project.id}` ? '检查中…' : '运行体检'}</button></div>
+        return <article className="project-card" data-health={project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : 'failed'} key={project.id}>
+          <header><h2>{project.name || '未命名流水线'}</h2><span className={`readiness-badge ${project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : 'failed'}`}>{project.enabled === false ? '已停用' : pf?.ready ? '已就绪' : '流水线异常'}</span></header>
+          <div className="project-card-actions"><button className={`pipeline-state-button ${project.enabled === false ? 'enable' : 'disable'}`} disabled={busy === `enabled:${project.id}`} onClick={() => void toggleEnabled(project)}>{busy === `enabled:${project.id}` ? '切换中…' : project.enabled === false ? '从现在开始启用' : '停用收单'}</button><button className="ghost framed" onClick={() => openEditor(project)}>编辑配置</button></div>
           <div className="project-path-story"><div><span>定位资料</span><b>{project.localizationSource?.path || '未配置'}</b></div><i/><div><span>修改工程 · {sourceLabel(project)}</span><b>{sourceLocation(project)}</b></div></div>
           <div className="delivery-tags">{projectActions.length ? projectActions.map(item => <span key={item.id}>{labelForAction(item)}</span>) : <span className="muted-tag">未配置交付</span>}</div>
-          {pf && !pf.ready && <div className="preflight-issue">{pf.checks.find(item => item.status === 'failed')?.summary ?? '配置尚未就绪'}</div>}
+          {project.enabled !== false && pf && !pf.ready && <div className="preflight-issue">{pf.summary || pf.checks.find(item => item.status === 'failed')?.summary || '流水线公共配置或运行环境异常'}</div>}
         </article>
       })}</div>}
 

@@ -329,4 +329,11 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
         fallback_ok = _writable_directory(fallback)
         checks.append(_check("delivery.fallback_patch", fallback_ok, f"保底 Patch 目录：{fallback}" if fallback_ok else "保底 Patch 目录不可用", "检查 storage.dataRoot 的可写性，且不要把数据目录放在修改仓库内" if not fallback_ok else None))
     failed = [item for item in checks if item["status"] == "failed"]
-    return {"projectId": project_id, "ready": not failed, "status": "ready" if not failed else "not_ready", "checks": checks}
+    summary = str(failed[0]["summary"]) if failed else "流水线已就绪"
+    return {
+        "projectId": project_id,
+        "ready": not failed,
+        "status": "ready" if not failed else "not_ready",
+        "summary": summary,
+        "checks": checks,
+    }

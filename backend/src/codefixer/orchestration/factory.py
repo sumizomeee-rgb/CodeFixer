@@ -35,6 +35,7 @@ from codefixer.config import LoadedConfig
 from codefixer.infrastructure.artifact_index import ArtifactIndex
 from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.delivery_store import DeliveryStore
+from codefixer.infrastructure.project_health_store import ProjectHealthStore
 from codefixer.infrastructure.task_store import TaskStore
 from codefixer.orchestration.pipeline import ChangedPipeline, PipelineResult
 from codefixer.protocols import ArtifactStore, SchemaRegistry
@@ -72,11 +73,27 @@ class RunExecutor:
             return self._fail_before_execution(tasks, summary, run_id, code="project_not_found", summary_text=f"Project no longer exists: {project_id}", retryable=False)
 
         preflight = run_project_preflight(loaded, project)
+        ProjectHealthStore(self.connection).put(preflight)
         if not preflight["ready"]:
             return self._fail_before_execution(tasks, summary, run_id, code="configuration_not_ready", summary_text="Project preflight failed before execution", retryable=True, checks=preflight["checks"])
         try:
             return self._execute_fresh(run_id, tasks, loaded, project, summary, database_path)
         except (KeyError, ValueError, ConfigurationNotReady) as exc:
+            ProjectHealthStore(self.connection).put(
+                {
+                    "projectId": project_id,
+                    "ready": False,
+                    "status": "not_ready",
+                    "summary": str(exc),
+                    "checks": [
+                        {
+                            "id": "runtime.configuration",
+                            "status": "failed",
+                            "summary": str(exc),
+                        }
+                    ],
+                }
+            )
             return self._fail_before_execution(tasks, summary, run_id, code="configuration_not_ready", summary_text=str(exc), retryable=True, checks=preflight["checks"])
 
     def _execute_fresh(self, run_id: str, tasks: TaskStore, loaded: LoadedConfig, project: dict[str, Any], run_summary: dict[str, Any], database_path: Path) -> PipelineResult:
