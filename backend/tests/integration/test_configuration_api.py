@@ -47,13 +47,19 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert changed.json()["mode"] == "automatic"
         etag = changed.json()["etag"]
         repository = repo
-        project = {"id": "demo", "name": "Demo", "routingRules": [{"id": "primary", "providerRef": "tapd", "priority": 100, "catchAll": True, "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}}], "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"locationType": "local", "localPath": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "submitterName": "Tester"}, "verification": {"steps": [], "allowNoAutomatedTests": True, "reason": "fixture uses deterministic review"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
+        project = {"id": "demo", "name": "Demo", "routingRules": [{"id": "primary", "providerRef": "tapd", "priority": 100, "catchAll": True, "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}}], "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"locationType": "local", "localPath": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "submitterName": "Tester"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
         created = client.post("/api/projects", json=project, headers={"If-Match": etag})
         assert created.status_code == 201
         project_id = created.json()["project"]["id"]
         assert project_id.startswith("pipeline-")
         assert project_id != "demo"
         assert created.json()["project"]["intakeStartedAt"]
+        assert created.json()["project"]["verification"] == {
+            "timeoutSeconds": 1200,
+            "steps": [],
+            "allowNoAutomatedTests": True,
+            "reason": "使用平台内置复核与交付前差异检查",
+        }
         assert created.json()["project"]["routingRules"][0]["versionFilter"] == {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}
         assert created.json()["project"]["modificationWorkspace"]["vcsKind"] == "git"
         assert created.json()["project"]["modificationWorkspace"]["hostingKind"] == "other"

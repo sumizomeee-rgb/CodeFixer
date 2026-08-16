@@ -129,29 +129,65 @@
 .event small { margin-top: 3px; color: var(--tertiary); font: 500 10px/1.3 var(--font-mono); }
 
 /* Project ledger */
-.project-grid { display: grid; border-block: 1px solid var(--line-strong); background: var(--surface); }
-.project-card { position: relative; padding: 20px 22px 18px 25px; border-bottom: 1px solid var(--line); }
-.project-card:last-child { border-bottom: 0; }
-.project-card::before { position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--line-strong); content: ""; }
-.project-card[data-health="ready"]::before { background: var(--success); }
-.project-card[data-health="failed"]::before { background: var(--failed); }
-.project-card[data-health="inactive"]::before { background: repeating-linear-gradient(180deg,var(--line-strong) 0 4px,transparent 4px 8px); }
-.project-card > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.project-card > header small { color: var(--tertiary); font: 500 10px/1 var(--font-mono); }
-.project-card > header h2 { margin-top: 5px; }
-.project-path-story { display: grid; grid-template-columns: minmax(0,1fr) 60px minmax(0,1fr); align-items: center; gap: 12px; margin: 18px 0 14px; }
-.project-path-story span,
-.project-path-story b { display: block; }
-.project-path-story span { margin-bottom: 4px; color: var(--tertiary); font-size: 10px; }
-.project-path-story b { overflow: hidden; font: 500 10px/1.5 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
-.project-path-story i { position: relative; height: 1px; background: var(--line-strong); }
+/* 与反馈源页同一处置：列表壳退化为纯布局容器，边界下放到每张卡自己身上。
+   这一页比反馈源页更需要——单卡实测高 248px、含四组信息，靠 1px 分隔线切分
+   读起来不是列表，是一整块被划了几刀的版面。空态本来就是 11px 圆角卡，
+   加进第一条数据就变成 0 圆角全方表，同一位置两种形态，这里对齐到空态。 */
+.project-grid { display: grid; gap: 10px; }
+.project-card { position: relative; padding: 15px 18px 16px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); transition: border-color var(--fast), box-shadow var(--fast); }
+.project-card:hover { border-color: var(--line-strong); box-shadow: var(--shadow-float); }
+/* 4px 彩色左边条整段删除（含 inactive 的斑马纹渐变——那条虚线竖带悬在无边界的卡左侧，
+   是这一页最刺眼的一处）。就绪与否右上角 readiness-badge 已经讲过，色带是第二遍。
+   failed / inactive 需要在一屏里被扫到，按第六轮结论由 soft 底色承载，
+   描边只微微提一档留在环境层级——列表项可能同时出现多个，整圈染色会让全体异常时无从分辨。 */
+.project-card[data-health="failed"] { border-color: color-mix(in srgb,var(--failed) 42%,var(--line)); background: color-mix(in srgb,var(--failed-soft) 55%,var(--surface)); }
+.project-card[data-health="inactive"] { background: var(--surface-2); }
+/* 第七轮补测：卡片收口之后，边界内的空洞全暴露了——实测 1148px 宽的卡里，
+   header 墨迹 210px（中间空 890px）、footer 墨迹 212px（中间空 860px）、
+   交付标签只占 12%。这套「两端对齐」骨架是表格行时代留下的：那时贴着页面两边铺、
+   没有边界，读起来像表格所以成立；收成卡片后同一份 CSS 读出来就是三片大洞。
+   改法是把四行压成三行，操作按钮上提到标题行，让每行都从左边起排。 */
+/* 宽屏用两列网格：左列信息竖排，右列按钮组独占并靠上。
+   这是卡里唯一保留的「两端」关系——它区分的是「这条流水线是什么」和「对它做什么」，
+   而且四张卡的按钮列会在右边缘连成一条稳定的操作轴，不是被迫拉开的空档。 */
+.project-card { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: start; column-gap: 18px; }
+.project-card > header { display: flex; align-items: center; gap: 12px; }
+/* 「修复流水线」眉标删除：整页就叫流水线，页面标题已经写过，每张卡再说一遍是废话。 */
+.project-card > header h2 { flex: 0 1 auto; overflow: hidden; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
+.project-card > header .readiness-badge { flex: none; }
+/* 左列信息竖排、右列按钮组独占并靠上。除按钮外的所有内容都钉在第 1 列——
+   否则它们会依次流进右列，跑到按钮下面去。 */
+.project-card > header,
+.project-path-story,
+.delivery-tags,
+.preflight-issue { grid-column: 1; }
+.project-card-actions { display: flex; grid-area: 1 / 2 / 2 / 3; gap: 8px; }
+/* 三个按钮原本三种规格（11px 有框 / 14px 无框 / 14px 有框），字号都不齐。统一成一种。 */
+.project-card-actions button { min-height: 28px; padding: 5px 10px; font-size: 11px; }
+/* 路径链紧贴排列，不再用 1fr 60px 1fr 把两侧顶到卡的两端——实测左路径文字只有 114px，
+   却被推到 509px 宽的格子里，箭头孤悬在中间，两侧各留一片 400px 的空。 */
+.project-path-story { display: flex; align-items: baseline; gap: 9px; margin: 11px 0 0; min-width: 0; }
+.project-path-story > div { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
+.project-path-story > div:last-child { flex: 1 1 auto; }
+.project-path-story span { flex: none; color: var(--tertiary); font-size: 10px; }
+.project-path-story b { overflow: hidden; font: 500 11px/1.5 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+/* 箭头从 60px 的长横线收成 13px 的短记号：它只需要表达「流向」，不需要占据版面。 */
+.project-path-story i { position: relative; flex: none; width: 13px; height: 1px; background: var(--line-strong); transform: translateY(-4px); }
 .project-path-story i::after { position: absolute; top: -3px; right: 0; width: 6px; height: 6px; border: solid var(--line-strong); border-width: 1px 1px 0 0; content: ""; transform: rotate(45deg); }
-.delivery-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+/* 交付标签补一个眉标：原来一行只有两个 chip 孤零零挂着，占卡宽 12%，
+   既没说清是什么，也撑不起一整行。 */
+.delivery-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 9px; }
+.delivery-tags::before { flex: none; color: var(--tertiary); font-size: 10px; content: "交付"; }
+/* chip 全局是 --r-sharp（3px）。压紧之后它和 7px 的按钮、11px 的卡边并排只隔几像素，
+   就它最尖。这里单独提到 --r-sm 与按钮取齐；全局 chip 不动，那是别处的账。 */
+.delivery-tags span { border-radius: var(--r-sm); }
 .delivery-tags .muted-tag { color: var(--tertiary); }
-.preflight-issue { margin-top: 13px; padding: 9px 11px; border-left: 3px solid var(--failed); background: var(--failed-soft); color: var(--failed); font-size: 11px; }
-.project-card footer { display: flex; justify-content: flex-end; gap: 10px; margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line); }
-.project-footer-spacer { flex: 1; }
-.pipeline-state-button { padding: 7px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--muted); font-size: 11px; }
+/* 原本 3px 左边线 + 底色，右侧不收口。底色已经足够传达警示，补成一圈同色系细线。
+   卡片改成 failed 淡红底后，这条提示要与卡底拉开，所以用实底 --failed-soft 不做混色。 */
+.preflight-issue { margin-top: 10px; padding: 7px 10px; border: 1px solid color-mix(in srgb,var(--failed) 30%,transparent); border-radius: var(--r-sm); background: var(--failed-soft); color: var(--failed); font-size: 11px; }
+/* footer 与分隔线整个删除：三个按钮上提到标题行之后，卡里只剩三行信息，
+   没有需要被切开的两个区，那条线和它下面 54px 高的空行都是纯负担。 */
+.pipeline-state-button { border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--muted); }
 .pipeline-state-button.disable:hover { border-color: color-mix(in srgb,var(--failed) 40%,var(--line)); background: var(--failed-soft); color: var(--failed); }
 .pipeline-state-button.enable { border-color: color-mix(in srgb,var(--success) 45%,var(--line)); background: var(--success-soft); color: var(--success); }
 .readiness-badge.inactive { border-color: var(--line); background: var(--surface-2); color: var(--tertiary); }
@@ -207,7 +243,9 @@
 .workbench-error i { color: var(--tertiary); font-style: normal; font-size: 16px; }
 .step-panel { animation: stepIn var(--standard) var(--ease); }
 .step-intro { display: grid; grid-template-columns: 42px 1fr; gap: 14px; margin-bottom: 26px; }
-.step-intro > span { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line-strong); color: var(--signal); font: 600 12px/1 var(--font-mono); }
+/* 圆角取 --r-sm：它和左侧步骤条的圆形节点只隔 12px，原来一圆一方并排，
+   是弹窗内最后一个直角构件。不跟着做成整圆——它是序号牌不是节点，方向感要留。 */
+.step-intro > span { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--line-strong); border-radius: var(--r-sm); color: var(--signal); font: 600 12px/1 var(--font-mono); }
 .step-intro h3 { margin: 0 0 5px; font-size: 18px; }
 .step-intro p { max-width: 680px; margin: 0; font-size: 12px; }
 /* 原本是「3px 彩色左边线 + 底色」，右侧没有收口，一块底色悬在版面里。
@@ -373,6 +411,12 @@
 .verification-row input,
 .verification-row select { margin: 0; }
 .route-condition { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; }
+.platform-guardrails { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; margin-top: 20px; }
+.platform-guardrails > div { padding: 13px 15px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); }
+.platform-guardrails b,
+.platform-guardrails span { display: block; }
+.platform-guardrails b { font-size: 11px; }
+.platform-guardrails span { margin-top: 5px; color: var(--tertiary); font-size: 10px; line-height: 1.6; }
 .workbench-actions { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 26px; border-top: 1px solid var(--line); background: var(--surface); }
 .workbench-actions > span { color: var(--tertiary); font-size: 11px; }
 .workbench-actions > div { display: flex; gap: 9px; }
@@ -548,11 +592,15 @@
   .raw-stage-list > div { grid-template-columns: 9px 58px 1fr; }
   .raw-stage-list small { grid-column: 2 / 4; margin: -5px 0 8px; }
   .artifact-list > div { grid-template-columns: 1fr; gap: 3px; }
-  .project-path-story { grid-template-columns: 1fr; }
-  .project-path-story i { width: 1px; height: 17px; margin-left: 8px; }
+  /* 窄屏放不下「标题 + 徽标 + 三按钮」一行，也放不下并排的两段路径：两者都改成竖排。
+     按钮组落到卡底自成一行——夹在标题和路径之间会把这条流水线「是什么」和
+     「配了什么」劈成两半，读者得跨过一排按钮才能看到路径。 */
+  .project-card { grid-template-columns: minmax(0,1fr); }
+  .project-card-actions { grid-area: auto; margin-top: 12px; }
+  .project-card-actions button { flex: 1; }
+  .project-path-story { flex-direction: column; align-items: stretch; gap: 3px; }
+  .project-path-story i { width: 1px; height: 13px; margin-left: 8px; transform: none; }
   .project-path-story i::after { top: auto; right: -3px; bottom: 0; transform: rotate(135deg); }
-  .project-card footer { justify-content: stretch; }
-  .project-card footer button { flex: 1; }
   .editor-backdrop { padding: 0; }
   .project-workbench { width: 100%; height: 100vh; border: 0; border-radius: 0; }
   .workbench-head { padding: 17px 18px; }

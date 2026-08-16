@@ -7,9 +7,7 @@ import type {
   PreflightResult,
   ProjectConfig,
   ProviderVersion,
-  RoutingOperator,
   SettingsResponse,
-  VerificationStepConfig,
   WorkspaceDetection,
   WorkspaceLocationType,
 } from '../entities/config'
@@ -24,7 +22,7 @@ const emptyProject = (): ProjectConfig => ({
   routingRules: [{ id: 'primary-route', providerRef: '', priority: 100, catchAll: true, conditions: [], versionFilter: {mode:'all',versions:[]} }],
   localizationSource: { id: 'localization-source', type: 'directory', path: '', readOnly: true },
   modificationWorkspace: { id: 'modification-workspace', locationType: 'local', localPath: '', allowedRoots: ['.'], deniedRoots: [], allowedExtensions: [] },
-  verification: { timeoutSeconds: 1200, steps: [], allowNoAutomatedTests: false, reason: '' },
+  verification: { timeoutSeconds: 1200, steps: [], allowNoAutomatedTests: true, reason: '使用平台内置复核与交付前差异检查' },
   deliveryLog: { technologyTag:'Lua', submitterName:'' },
   finalActions: [],
 })
@@ -74,10 +72,8 @@ export function ProjectsPage() {
   useEffect(() => { void reload().catch(e => setError(e instanceof Error ? e.message : '加载失败')) }, [])
 
   const providers = useMemo(() => settings?.config.ticketProviders.filter(item => item.id) ?? [],[settings])
-  const executableIds = useMemo(() => Object.keys(settings?.config.executableBindings ?? {}),[settings])
   const route = editor ? firstRule(editor) : null
   const versionFilter = route?.versionFilter ?? {mode:'all' as const,versions:[]}
-  const routeCondition = route?.conditions?.[0]
   const actions = editor?.finalActions ?? []
   const deliveryLog = editor?.deliveryLog ?? {technologyTag:'Lua',submitterName:''}
   const patch = actionOf(actions,'patch')
@@ -201,23 +197,10 @@ export function ProjectsPage() {
     } catch (e) { setError(e instanceof Error ? e.message : '流水线状态切换失败') }
     finally { setBusy('') }
   }
-  const addVerification = () => {
-    if (!editor) return
-    const steps = editor.verification?.steps ?? []
-    const next:VerificationStepConfig = {id:`step-${steps.length+1}`,executableRef:'',args:[],workingDirectory:'.',required:true}
-    setEditor({...editor,verification:{...editor.verification,steps:[...steps,next]}})
-  }
-  const updateVerification = (index:number,patch:Partial<VerificationStepConfig>) => {
-    if (!editor) return
-    const steps = [...(editor.verification?.steps ?? [])]
-    steps[index] = {...steps[index],...patch}
-    setEditor({...editor,verification:{...editor.verification,steps}})
-  }
-
   const stepComplete = {
     1:Boolean(editor?.name?.trim() && route?.providerRef && (versionFilter.mode === 'all' || versionFilter.versions.length > 0)),
     2:Boolean(editor?.localizationSource?.path),
-    3:Boolean((editor?.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace.remoteUrl : editor?.modificationWorkspace?.localPath) && detection?.ready && ((editor?.verification?.steps ?? []).length > 0 || (editor?.verification?.allowNoAutomatedTests && editor.verification.reason?.trim()))),
+    3:Boolean((editor?.modificationWorkspace?.locationType === 'remote' ? editor.modificationWorkspace.remoteUrl : editor?.modificationWorkspace?.localPath) && detection?.ready),
     4:Boolean(actions.length) && Boolean(editor?.deliveryLog?.technologyTag.trim() && editor.deliveryLog.submitterName.trim()) && actions.every(action => action.type === 'patch' ? Boolean(action.outputDirectory?.trim()) : action.type === 'githubPr' ? action.targetBranches.length > 0 : true),
   }
   const canSave = stepComplete[1] && stepComplete[2] && stepComplete[3] && stepComplete[4]
@@ -230,15 +213,15 @@ export function ProjectsPage() {
     {!editor && error && <button className="notice-strip error-note" onClick={() => setError('')}>{error}</button>}
 
     {projects.length === 0 ? <div className="empty-state project-empty"><span className="empty-symbol"><svg viewBox="0 0 36 36"><path d="M8 9h20v18H8z"/><path d="M13 5v8M23 5v8M5 15h6M25 15h6M13 22h10"/></svg></span><h2>建立第一条修复通道</h2><p>从一个工单反馈来源开始，再告诉 CodeFixer 去哪里理解问题、修改哪份工程，以及最终如何交付。</p><button className="primary compact" onClick={() => openEditor()}>开始配置</button></div> :
-      <div className="project-grid refined-project-grid">{projects.map(project => {
+      <div className="project-grid">{projects.map(project => {
         const pf = preflights[project.id]
         const projectActions = project.finalActions ?? []
-        return <article className="project-card project-ledger-card" data-health={project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'} key={project.id}>
-          <header><div><small>修复流水线</small><h2>{project.name || '未命名流水线'}</h2></div><span className={`readiness-badge ${project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{project.enabled === false ? '已停用' : pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
+        return <article className="project-card" data-health={project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'} key={project.id}>
+          <header><h2>{project.name || '未命名流水线'}</h2><span className={`readiness-badge ${project.enabled === false ? 'inactive' : pf?.ready ? 'ready' : pf ? 'failed' : 'unknown'}`}>{project.enabled === false ? '已停用' : pf?.ready ? '已就绪' : pf ? '需处理' : '待体检'}</span></header>
+          <div className="project-card-actions"><button className={`pipeline-state-button ${project.enabled === false ? 'enable' : 'disable'}`} disabled={busy === `enabled:${project.id}`} onClick={() => void toggleEnabled(project)}>{busy === `enabled:${project.id}` ? '切换中…' : project.enabled === false ? '从现在开始启用' : '停用收单'}</button><button className="ghost framed" onClick={() => openEditor(project)}>编辑配置</button><button className="ghost framed" disabled={busy === `preflight:${project.id}` || project.enabled === false} onClick={() => void preflight(project.id)}>{busy === `preflight:${project.id}` ? '检查中…' : '运行体检'}</button></div>
           <div className="project-path-story"><div><span>定位资料</span><b>{project.localizationSource?.path || '未配置'}</b></div><i/><div><span>修改工程 · {sourceLabel(project)}</span><b>{sourceLocation(project)}</b></div></div>
           <div className="delivery-tags">{projectActions.length ? projectActions.map(item => <span key={item.id}>{labelForAction(item)}</span>) : <span className="muted-tag">未配置交付</span>}</div>
           {pf && !pf.ready && <div className="preflight-issue">{pf.checks.find(item => item.status === 'failed')?.summary ?? '配置尚未就绪'}</div>}
-          <footer><button className={`pipeline-state-button ${project.enabled === false ? 'enable' : 'disable'}`} disabled={!!busy} onClick={() => void toggleEnabled(project)}>{busy === `enabled:${project.id}` ? '切换中…' : project.enabled === false ? '从现在开始启用' : '停用收单'}</button><span className="project-footer-spacer"/><button className="ghost action-link" onClick={() => openEditor(project)}>编辑配置</button><button className="ghost framed" disabled={!!busy || project.enabled === false} onClick={() => void preflight(project.id)}>{busy === `preflight:${project.id}` ? '检查中…' : '运行体检'}</button></footer>
         </article>
       })}</div>}
 
@@ -295,17 +278,7 @@ export function ProjectsPage() {
             </div>
           </div>}
 
-          {/* 规则属于「在这个工程里能改什么、改完怎么验」，语义归第 3 步。
-              放在 step 判断之外会让它在四步里全程常驻，用户在选交付出口时也看得到它。 */}
-          {step === 3 && <details className="project-policy"><summary><span>修改与检查规则</span><small>限制可改文件，并设置完成后的自动检查</small></summary><div className="policy-body">
-            <h4>允许修改哪些文件</h4><div className="form-grid polished-form"><label>可修改目录<input value={(editor.modificationWorkspace?.allowedRoots ?? ['.']).join(', ')} onChange={e => updateWorkspace({allowedRoots:csv(e.target.value)})}/></label><label>禁止修改目录<input value={(editor.modificationWorkspace?.deniedRoots ?? []).join(', ')} onChange={e => updateWorkspace({deniedRoots:csv(e.target.value)})} placeholder="vendor, generated"/></label><label className="span-field">可修改文件类型<input value={(editor.modificationWorkspace?.allowedExtensions ?? []).join(', ')} onChange={e => updateWorkspace({allowedExtensions:csv(e.target.value)})} placeholder="留空表示不限制；例如 .py, .ts, .lua, .prefab"/></label></div>
-            <div className="advanced-heading"><h4>完成后自动检查</h4><button className="ghost framed" onClick={addVerification}>添加检查</button></div>
-            {(editor.verification?.steps ?? []).map((item,index) => <div className="verification-row" key={`${item.id}-${index}`}><input value={item.id} onChange={e => updateVerification(index,{id:e.target.value})} placeholder="检查名称"/><select value={item.executableRef} onChange={e => updateVerification(index,{executableRef:e.target.value})}><option value="">运行工具</option>{executableIds.map(id => <option key={id}>{id}</option>)}</select><input value={item.args.join(' ')} onChange={e => updateVerification(index,{args:e.target.value.split(' ').filter(Boolean)})} placeholder="运行参数"/><input value={item.workingDirectory ?? '.'} onChange={e => updateVerification(index,{workingDirectory:e.target.value})} placeholder="运行目录"/><button className="ghost" aria-label="移除检查" onClick={() => setEditor({...editor,verification:{...editor.verification,steps:(editor.verification?.steps ?? []).filter((_,i) => i !== index)}})}>×</button></div>)}
-            <label className="check-row"><input type="checkbox" checked={!!editor.verification?.allowNoAutomatedTests} onChange={e => setEditor({...editor,verification:{...editor.verification,allowNoAutomatedTests:e.target.checked}})}/><span>这个工程暂时没有可自动执行的检查</span></label>
-            {editor.verification?.allowNoAutomatedTests && <label className="wide-label">原因<textarea value={editor.verification.reason ?? ''} onChange={e => setEditor({...editor,verification:{...editor.verification,reason:e.target.value}})}/></label>}
-            <h4>工单接收规则</h4><div className="form-grid polished-form"><label>匹配优先级<input type="number" value={route.priority} onChange={e => updateRule({priority:Number(e.target.value) || 0})}/></label><label className="check-row"><input type="checkbox" checked={!!route.catchAll} onChange={e => updateRule({catchAll:e.target.checked,conditions:e.target.checked ? [] : [{field:'module',operator:'contains',value:''}]})}/><span>接收该反馈源的全部工单</span></label></div>
-            {!route.catchAll && <div className="route-condition"><label>字段<input value={String(routeCondition?.field ?? 'module')} onChange={e => updateRule({conditions:[{field:e.target.value,operator:(routeCondition?.operator ?? 'contains') as RoutingOperator,value:routeCondition?.value ?? ''}]})}/></label><label>条件<select value={routeCondition?.operator ?? 'contains'} onChange={e => updateRule({conditions:[{field:routeCondition?.field ?? 'module',operator:e.target.value as RoutingOperator,value:routeCondition?.value ?? ''}]})}><option value="contains">包含</option><option value="eq">等于</option><option value="neq">不等于</option><option value="exists">存在</option></select></label><label>值<input disabled={routeCondition?.operator === 'exists'} value={String(routeCondition?.value ?? '')} onChange={e => updateRule({conditions:[{field:routeCondition?.field ?? 'module',operator:(routeCondition?.operator ?? 'contains') as RoutingOperator,value:e.target.value}]})}/></label></div>}
-          </div></details>}
+          {step === 3 && <div className="platform-guardrails"><div><b>平台自动保护</b><span>默认只修改识别到的仓库；每个任务使用独立目录，不会直接改动你填写的本地仓库。</span></div><div><b>完成后自动复核</b><span>平台会检查实际差异并由独立模型复核；项目没有专用测试命令时，无需额外配置。</span></div></div>}
         </div>
       </div>
       <footer className="workbench-actions"><span>{canSave ? '配置完整，可以保存' : `第 ${step} 步还有必填项`}</span><div><button className="ghost" onClick={closeEditor}>取消</button>{step > 1 && <button className="ghost framed" onClick={() => setStep(value => Math.max(1,value - 1) as Step)}>上一步</button>}{step < 4 ? <button className="primary compact" disabled={!stepComplete[step]} onClick={next}>继续</button> : <button className="primary compact" disabled={busy === 'save' || !canSave} onClick={() => void save()}>{busy === 'save' ? '保存中…' : '保存并体检'}</button>}</div></footer>

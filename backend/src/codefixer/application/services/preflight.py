@@ -197,12 +197,12 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     for key, label in (("technologyTag", "技术域"), ("submitterName", "提交人姓名")):
         if not str(delivery_log.get(key) or "").strip():
             raise ValueError(f"交付日志缺少{label}")
-    verification = normalized.get("verification") or {}
-    verification_steps = verification.get("steps") or []
-    allow_no_tests = bool(verification.get("allowNoAutomatedTests"))
-    no_tests_reason = str(verification.get("reason") or "").strip()
-    if not verification_steps and not (allow_no_tests and no_tests_reason):
-        raise ValueError("请添加完成后的自动检查，或声明暂无自动检查并填写原因")
+    verification = normalized.setdefault("verification", {})
+    verification.setdefault("timeoutSeconds", 1200)
+    verification.setdefault("steps", [])
+    if not verification["steps"]:
+        verification["allowNoAutomatedTests"] = True
+        verification["reason"] = "使用平台内置复核与交付前差异检查"
     for action in actions:
         action_type = str(action.get("type", ""))
         if action_type not in allowed:
@@ -267,10 +267,15 @@ def run_project_preflight(loaded: LoadedConfig, project: dict[str, Any]) -> dict
 
     verification = project.get("verification") or {}
     steps = verification.get("steps") or []
-    allow_no_tests = bool(verification.get("allowNoAutomatedTests"))
-    reason = str(verification.get("reason", "")).strip()
-    verification_ok = bool(steps) or (allow_no_tests and bool(reason))
-    checks.append(_check("verification.policy", verification_ok, f"已配置 {len(steps)} 个验证步骤" if steps else ("已显式声明无自动测试替代门禁" if verification_ok else "未配置验证策略"), "添加验证步骤，或显式填写 allowNoAutomatedTests 与 reason" if not verification_ok else None))
+    checks.append(
+        _check(
+            "verification.policy",
+            True,
+            f"已配置 {len(steps)} 个项目检查"
+            if steps
+            else "使用平台内置复核与差异检查",
+        )
+    )
     actions = project.get("finalActions") or []
     checks.append(_check("delivery.actions", bool(actions), f"最终动作：{len(actions)} 个" if actions else "至少需要一个最终动作"))
     action_ids: set[str] = set()
