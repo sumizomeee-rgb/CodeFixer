@@ -66,11 +66,19 @@ class ConfigStore:
         self._local_path = loaded.local_config_path or self._default_local_path(loaded.base_config_path)
         self._secrets_path = loaded.secrets_config_path or self._default_secrets_path(loaded.base_config_path)
         self._loaded = loaded
-        if any(not str(project.get("intakeStartedAt") or "").strip() for project in loaded.config.projects):
+        if any(
+            not str(project.get("intakeStartedAt") or "").strip()
+            or not str(project.get("createdAt") or "").strip()
+            for project in loaded.config.projects
+        ):
             payload = loaded.config.model_dump(mode="json")
             migrated_at = datetime.now(UTC).isoformat()
             for project in payload["projects"]:
                 project.setdefault("intakeStartedAt", migrated_at)
+                project.setdefault(
+                    "createdAt",
+                    project.get("intakeStartedAt") or migrated_at,
+                )
             self.replace_effective(AppConfig.model_validate(payload))
 
     @staticmethod

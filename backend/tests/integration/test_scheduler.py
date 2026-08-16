@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from codefixer.config import AppConfig, LoadedConfig
 from codefixer.domain.tasks import IngestedTicket
 from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.database import apply_migrations, connect_database
+from codefixer.infrastructure.project_health_store import ProjectHealthStore
 from codefixer.infrastructure.task_store import TaskStore
-from codefixer.orchestration.scheduler import Scheduler
+from codefixer.orchestration.scheduler import Scheduler, _project_health_due
 
 
 def _loaded(tmp_path: Path, config: AppConfig) -> LoadedConfig:
@@ -87,6 +89,15 @@ def test_scheduler_only_polls_providers_referenced_by_enabled_pipelines(tmp_path
     db = loaded.data_root / "codefixer.db"
     with connect_database(db) as connection:
         apply_migrations(connection)
+        ProjectHealthStore(connection).put(
+            {
+                "projectId": "active",
+                "ready": True,
+                "status": "ready",
+                "summary": "流水线已就绪",
+                "checks": [],
+            }
+        )
     scheduler = Scheduler(db_path=db, config_store=ConfigStore(loaded), contracts_root=tmp_path)
     called: list[str] = []
     scheduler._poll_provider = lambda provider: called.append(str(provider["id"]))
@@ -94,3 +105,53 @@ def test_scheduler_only_polls_providers_referenced_by_enabled_pipelines(tmp_path
     asyncio.run(scheduler.tick())
 
     assert called == ["provider-tapd"]
+
+
+def test_project_health_schedule_is_anchored_to_creation_time():
+    created = datetime(2026, 8, 17, 10, 20, tzinfo=UTC)
+
+    assert _project_health_due(created.isoformat(), created.isoformat(), created + timedelta(hours=2, minutes=59)) is False
+    assert _project_health_due(created.isoformat(), created.isoformat(), created + timedelta(hours=3)) is True
+    assert _project_health_due(created.isoformat(), (created + timedelta(hours=3, minutes=1)).isoformat(), created + timedelta(hours=5)) is False
+    assert _project_health_due(created.isoformat(), (created + timedelta(hours=3, minutes=1)).isoformat(), created + timedelta(hours=6)) is True
+
+
+def test_scheduler_does_not_poll_provider_when_pipeline_health_is_red(tmp_path: Path):
+    created = datetime.now(UTC).isoformat()
+    config = AppConfig.model_validate(
+        {
+            "ticketProviders": [
+                {"id": "provider-tapd", "name": "TAPD", "type": "tapd", "workspaceId": "101"}
+            ],
+            "projects": [
+                {
+                    "id": "broken",
+                    "name": "Broken",
+                    "enabled": True,
+                    "createdAt": created,
+                    "intakeStartedAt": created,
+                    "routingRules": [{"id": "route", "providerRef": "provider-tapd"}],
+                }
+            ],
+        }
+    )
+    loaded = _loaded(tmp_path, config)
+    db = loaded.data_root / "codefixer.db"
+    with connect_database(db) as connection:
+        apply_migrations(connection)
+        ProjectHealthStore(connection).put(
+            {
+                "projectId": "broken",
+                "ready": False,
+                "status": "not_ready",
+                "summary": "仓库不可访问",
+                "checks": [],
+            }
+        )
+    scheduler = Scheduler(db_path=db, config_store=ConfigStore(loaded), contracts_root=tmp_path)
+    called: list[str] = []
+    scheduler._poll_provider = lambda provider: called.append(str(provider["id"]))
+
+    asyncio.run(scheduler.tick())
+
+    assert called == []

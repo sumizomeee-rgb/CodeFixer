@@ -55,6 +55,7 @@ export type ProjectConfig = {
   id:string
   name?:string
   enabled?:boolean
+  createdAt?:string
   intakeStartedAt?:string
   routingRules?:RoutingRule[]
   localizationSource?:LocalizationSourceConfig

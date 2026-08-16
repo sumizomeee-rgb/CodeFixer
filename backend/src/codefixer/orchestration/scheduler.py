@@ -3,17 +3,49 @@ from __future__ import annotations
 import asyncio
 import time
 from collections.abc import Callable
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from codefixer.application.services.ingestion import poll_configured_provider
+from codefixer.application.services.preflight import run_project_preflight
 from codefixer.infrastructure.config_store import ConfigStore
 from codefixer.infrastructure.database import connect_database
+from codefixer.infrastructure.project_health_store import ProjectHealthStore
 from codefixer.infrastructure.task_store import TaskStore
 from codefixer.orchestration.factory import RunExecutor
 from codefixer.orchestration.recovery import RecoveryService
 
 DEFAULT_MAX_CONCURRENT_TASKS = 8
 PROVIDER_FAILURE_BACKOFF_SECONDS = 15 * 60
+PROJECT_HEALTH_INTERVAL = timedelta(hours=3)
+
+
+def _timestamp(value: object) -> datetime | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed.replace(tzinfo=UTC) if parsed.tzinfo is None else parsed.astimezone(UTC)
+
+
+def _project_health_due(
+    created_at: object,
+    checked_at: object,
+    now: datetime,
+) -> bool:
+    created = _timestamp(created_at)
+    checked = _timestamp(checked_at)
+    if created is None or checked is None:
+        return True
+    elapsed = now.astimezone(UTC) - created
+    if elapsed < PROJECT_HEALTH_INTERVAL:
+        return False
+    interval_count = int(elapsed / PROJECT_HEALTH_INTERVAL)
+    latest_boundary = created + interval_count * PROJECT_HEALTH_INTERVAL
+    return checked < latest_boundary
 
 
 def _active_provider_ids(projects: list[dict[str, object]]) -> set[str]:
@@ -67,8 +99,17 @@ class Scheduler:
     async def tick(self) -> None:
         self._reap()
         loaded = self.config_store.reload()
+        await self._refresh_project_health(loaded.config.projects)
+        with connect_database(self.db_path) as connection:
+            health = ProjectHealthStore(connection).list()
+        healthy_projects = [
+            project
+            for project in loaded.config.projects
+            if project.get("enabled", True) is not False
+            and bool((health.get(str(project.get("id") or "")) or {}).get("ready"))
+        ]
         now = time.monotonic()
-        active_provider_ids = _active_provider_ids(loaded.config.projects)
+        active_provider_ids = _active_provider_ids(healthy_projects)
         for provider in loaded.config.ticketProviders:
             provider_id = str(provider.get("id", ""))
             if (
@@ -156,11 +197,18 @@ class Scheduler:
     def _poll_provider(self, provider: dict[str, object]) -> None:
         loaded = self.config_store.reload()
         provider_id = str(provider.get("id") or "")
-        intake_times = [
-            str(project.get("intakeStartedAt") or "").strip()
+        with connect_database(self.db_path) as connection:
+            health = ProjectHealthStore(connection).list()
+        healthy_projects = [
+            project
             for project in loaded.config.projects
             if project.get("enabled", True) is not False
-            and any(
+            and bool((health.get(str(project.get("id") or "")) or {}).get("ready"))
+        ]
+        intake_times = [
+            str(project.get("intakeStartedAt") or "").strip()
+            for project in healthy_projects
+            if any(
                 isinstance(rule, dict) and str(rule.get("providerRef") or "") == provider_id
                 for rule in project.get("routingRules") or []
             )
@@ -173,10 +221,48 @@ class Scheduler:
             poll_configured_provider(
                 connection,
                 dict(provider),
-                loaded.config.projects,
+                healthy_projects,
                 loaded.config.execution.mode,
                 self.config_store.get_secret,
             )
+
+    async def _refresh_project_health(self, projects: list[dict[str, object]]) -> None:
+        now = datetime.now(UTC)
+        with connect_database(self.db_path) as connection:
+            stored = ProjectHealthStore(connection).list()
+        due = [
+            dict(project)
+            for project in projects
+            if project.get("enabled", True) is not False
+            and _project_health_due(
+                project.get("createdAt") or project.get("intakeStartedAt"),
+                (stored.get(str(project.get("id") or "")) or {}).get("checkedAt"),
+                now,
+            )
+        ]
+        for project in due:
+            try:
+                result = await asyncio.to_thread(
+                    run_project_preflight,
+                    self.config_store.loaded,
+                    project,
+                )
+            except Exception as exc:
+                result = {
+                    "projectId": str(project.get("id") or ""),
+                    "ready": False,
+                    "status": "not_ready",
+                    "summary": f"流水线定时检查失败：{exc}",
+                    "checks": [
+                        {
+                            "id": "scheduled.health",
+                            "status": "failed",
+                            "summary": str(exc),
+                        }
+                    ],
+                }
+            with connect_database(self.db_path) as connection:
+                ProjectHealthStore(connection).put(result)
 
     def _reap(self) -> None:
         finished = [run_id for run_id, task in self._active.items() if task.done()]

@@ -54,6 +54,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert project_id.startswith("pipeline-")
         assert project_id != "demo"
         assert created.json()["project"]["intakeStartedAt"]
+        assert created.json()["project"]["createdAt"] == created.json()["project"]["intakeStartedAt"]
         assert created.json()["project"]["verification"] == {
             "timeoutSeconds": 1200,
             "steps": [],

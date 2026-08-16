@@ -71,12 +71,14 @@ def list_projects(request: Request, response: Response) -> dict[str, object]:
 def create_project(project: dict[str, Any], request: Request, response: Response) -> dict[str, object]:
     store = config_store(request)
     require_if_match(request, store)
+    created_at = datetime.now(UTC).isoformat()
     try:
         normalized = normalize_project_configuration(
             {
                 **project,
                 "id": _new_project_id(store),
-                "intakeStartedAt": datetime.now(UTC).isoformat(),
+                "createdAt": created_at,
+                "intakeStartedAt": created_at,
             }
         )
         health = _check_project(request, normalized)
@@ -107,6 +109,9 @@ def update_project(project_id: str, project: dict[str, Any], request: Request, r
             {
                 **project,
                 "id": project_id,
+                "createdAt": existing.get("createdAt")
+                or existing.get("intakeStartedAt")
+                or datetime.now(UTC).isoformat(),
                 "intakeStartedAt": existing.get("intakeStartedAt")
                 or datetime.now(UTC).isoformat(),
             }
