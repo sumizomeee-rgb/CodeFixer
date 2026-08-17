@@ -7,6 +7,7 @@ import subprocess
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 from codefixer.adapters.agents import parse_agent_profile
 from codefixer.application.services.workspace_detection import available_final_actions, detect_workspace, sanitize_remote_url
@@ -55,14 +56,22 @@ def _direct_path(raw: object) -> Path | None:
 def _writable_directory(path: Path | None) -> bool:
     if path is None:
         return False
+    probe: Path | None = None
     try:
         path.mkdir(parents=True, exist_ok=True)
-        probe = path / ".codefixer-preflight"
-        probe.write_text("ok", encoding="utf-8")
+        probe = path / f".codefixer-preflight-{uuid4().hex}.tmp"
+        with probe.open("x", encoding="utf-8") as handle:
+            handle.write("ok")
         probe.unlink(missing_ok=True)
         return True
     except OSError:
         return False
+    finally:
+        if probe is not None:
+            try:
+                probe.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def _workspace_policy_checks(workspace: dict[str, Any]) -> list[Check]:
