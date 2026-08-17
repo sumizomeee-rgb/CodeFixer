@@ -6,6 +6,73 @@ from codefixer.adapters.tickets.redmine import RedmineTicketProvider
 from codefixer.adapters.tickets.tapd import TapdTicketProvider
 
 
+def test_redmine_provider__reports_authenticated_username_when_connection_is_ready():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/users/current.json":
+            return httpx.Response(
+                200,
+                json={
+                    "user": {
+                        "id": 7,
+                        "login": "tester",
+                        "firstname": "测试",
+                        "lastname": "用户",
+                    }
+                },
+            )
+        if request.url.path == "/issues.json":
+            assert request.url.params["assigned_to_id"] == "me"
+            return httpx.Response(200, json={"issues": []})
+        raise AssertionError(request.url)
+
+    provider = RedmineTicketProvider(
+        {
+            "id": "rm",
+            "type": "redmine",
+            "baseUrl": "https://redmine.example",
+            "apiKeySecretRef": "rm-key",
+        },
+        lambda _: "key-value",
+        httpx.Client(
+            base_url="https://redmine.example",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+    assert provider.test_connection() == {
+        "ready": True,
+        "providerId": "rm",
+        "username": "tester",
+    }
+
+
+def test_tapd_provider__reports_authenticated_username_when_connection_is_ready():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/bugs"
+        assert request.url.params["current_owner"] == "Tester"
+        return httpx.Response(200, json={"status": 1, "data": []})
+
+    provider = TapdTicketProvider(
+        {
+            "id": "tapd",
+            "type": "tapd",
+            "workspaceId": "101",
+            "auth": {"mode": "basic", "usernameSecretRef": "u"},
+        },
+        lambda key: "Tester" if key == "u" else "password",
+        httpx.Client(
+            base_url="https://api.tapd.cn",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+    assert provider.test_connection() == {
+        "ready": True,
+        "providerId": "tapd",
+        "username": "Tester",
+    }
+
+
 def test_redmine_provider__freezes_full_issue_and_uses_incremental_filter():
     seen: list[httpx.Request] = []
 

@@ -43,11 +43,30 @@ class RedmineTicketProvider:
         return payload
 
     def test_connection(self) -> dict[str, object]:
+        user_payload = self._get("/users/current.json")
+        user = user_payload.get("user")
+        if not isinstance(user, dict):
+            raise ValueError("Redmine current user missing")
+        full_name = " ".join(
+            part
+            for part in (
+                str(user.get("firstname") or "").strip(),
+                str(user.get("lastname") or "").strip(),
+            )
+            if part
+        )
+        username = str(user.get("login") or user.get("name") or full_name or "").strip()
+        if not username:
+            raise ValueError("Redmine current user cannot be identified")
         payload = self._get(
             "/issues.json",
             {"assigned_to_id": "me", "limit": 1, "status_id": "*"},
         )
-        return {"ready": isinstance(payload.get("issues"), list), "providerId": self.provider_id}
+        return {
+            "ready": isinstance(payload.get("issues"), list),
+            "providerId": self.provider_id,
+            "username": username,
+        }
 
     @staticmethod
     def _version_items(values: list[object]) -> list[dict[str, str]]:

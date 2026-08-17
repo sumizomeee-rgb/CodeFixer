@@ -108,7 +108,7 @@ class TapdTicketProvider:
         return {
             "ready": isinstance(payload.get("data"), list),
             "providerId": self.provider_id,
-            "assignee": assignee,
+            "username": assignee,
         }
 
     def list_versions(self) -> list[dict[str, str]]:

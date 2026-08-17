@@ -1,6 +1,8 @@
 import type { ExecutionMode, PreflightResult, ProjectConfig, ProviderVersion, ReadinessResponse, SettingsResponse, TicketProviderConfig, WorkspaceDetection, WorkspaceLocationType } from '../entities/config'
 import type { DashboardData, TaskRecord } from '../entities/task'
 
+export type ProviderTestResult = { ready:boolean; providerId:string; username:string }
+
 export class ApiError extends Error { status:number; code:string; constructor(status:number,code:string,message:string){super(message);this.status=status;this.code=code} }
 async function request<T>(path:string,init?:RequestInit):Promise<T>{const response=await fetch(path,{...init,headers:{'Content-Type':'application/json',...(init?.headers??{})}});if(!response.ok){const payload=await response.json().catch(()=>null);const error=payload?.error??payload?.detail??{};throw new ApiError(response.status,error.code??'request_failed',error.message??error.reason??`HTTP ${response.status}`)}return response.json() as Promise<T>}
 export const api={
@@ -18,7 +20,7 @@ export const api={
   providers:()=>request<{items:Array<Record<string,unknown>&{id?:string;type?:string;enabled?:boolean}>}>('/api/providers'),
   createProvider:(provider:Omit<TicketProviderConfig,'id'>,secrets:Record<string,string>,etag:string)=>request<{provider:TicketProviderConfig;etag:string}>('/api/providers',{method:'POST',headers:{'If-Match':etag},body:JSON.stringify({provider,secrets})}),
   updateProvider:(id:string,provider:TicketProviderConfig,secrets:Record<string,string>,etag:string)=>request<{provider:TicketProviderConfig;etag:string}>(`/api/providers/${encodeURIComponent(id)}`,{method:'PUT',headers:{'If-Match':etag},body:JSON.stringify({provider,secrets})}),
-  testProvider:(id:string)=>request<Record<string,unknown>>(`/api/providers/${encodeURIComponent(id)}/test`,{method:'POST'}),
+  testProvider:(id:string)=>request<ProviderTestResult>(`/api/providers/${encodeURIComponent(id)}/test`,{method:'POST'}),
   providerVersions:(id:string)=>request<{providerId:string;items:ProviderVersion[]}>(`/api/providers/${encodeURIComponent(id)}/versions`),
   tasks:()=>request<{items:TaskRecord[]}>('/api/tasks'),
   task:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}`),

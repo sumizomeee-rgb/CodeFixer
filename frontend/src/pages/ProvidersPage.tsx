@@ -5,6 +5,7 @@ import { api } from '../lib/api'
 type ProviderType = 'redmine'|'tapd'
 type AuthMode = 'basic'|'oauth'
 type ConnectionState = 'ready'|'failed'
+type ConnectionInfo = { status:ConnectionState; username?:string }
 
 const stringField = (value:unknown) => typeof value === 'string' ? value : ''
 
@@ -15,7 +16,7 @@ export function ProvidersPage() {
   const [busy,setBusy] = useState('')
   const [show,setShow] = useState(false)
   const [editingId,setEditingId] = useState<string|null>(null)
-  const [connectionStates,setConnectionStates] = useState<Record<string,ConnectionState>>({})
+  const [connectionStates,setConnectionStates] = useState<Record<string,ConnectionInfo>>({})
   const [type,setType] = useState<ProviderType>('redmine')
   const [name,setName] = useState('')
   const [baseUrl,setBaseUrl] = useState('')
@@ -34,7 +35,12 @@ export function ProvidersPage() {
       const results = await Promise.allSettled(enabled.map(provider => api.testProvider(provider.id)))
       setConnectionStates(value => {
         const next = {...value}
-        enabled.forEach((provider,index) => { next[provider.id] = results[index].status === 'fulfilled' ? 'ready' : 'failed' })
+        enabled.forEach((provider,index) => {
+          const result = results[index]
+          next[provider.id] = result.status === 'fulfilled'
+            ? {status:'ready',username:result.value.username}
+            : {status:'failed'}
+        })
         return next
       })
     })
@@ -51,9 +57,10 @@ export function ProvidersPage() {
   const testConnection = async (providerId:string) => {
     setBusy(`test:${providerId}`)
     try {
-      await api.testProvider(providerId); setConnectionStates(value => ({...value,[providerId]:'ready'})); setNotice('连接验证通过')
+      const result = await api.testProvider(providerId)
+      setConnectionStates(value => ({...value,[providerId]:{status:'ready',username:result.username}})); setNotice('连接验证通过')
       await load()
-    } catch (e) { setConnectionStates(value => ({...value,[providerId]:'failed'})); setNotice(e instanceof Error ? e.message : '操作失败') }
+    } catch (e) { setConnectionStates(value => ({...value,[providerId]:{status:'failed'}})); setNotice(e instanceof Error ? e.message : '操作失败') }
     finally { setBusy('') }
   }
   const save = async () => {
@@ -74,11 +81,11 @@ export function ProvidersPage() {
       const providerId = result.provider.id
       reset(); await load()
       try {
-        await api.testProvider(providerId)
-        setConnectionStates(value => ({...value,[providerId]:'ready'}))
+        const testResult = await api.testProvider(providerId)
+        setConnectionStates(value => ({...value,[providerId]:{status:'ready',username:testResult.username}}))
         setNotice(editingId ? '反馈源配置已更新，连接正常' : '反馈源已保存，连接正常')
       } catch (e) {
-        setConnectionStates(value => ({...value,[providerId]:'failed'}))
+        setConnectionStates(value => ({...value,[providerId]:{status:'failed'}}))
         const reason = e instanceof Error ? e.message : '连接测试失败'
         setNotice(`反馈源已保存，但${reason}`)
       }
@@ -91,10 +98,11 @@ export function ProvidersPage() {
     <div className="page-heading"><div><span className="page-kicker">INTAKE CHANNELS</span><h1>反馈源</h1><p>连接日常提交 Bug 和需求的平台；登录信息只保存在当前部署机的 .local 中。</p></div>{providers.length > 0 && <button className="primary compact" onClick={openNew}>添加反馈源</button>}</div>
     {notice && <button className="notice-strip" onClick={() => setNotice('')}>{notice}</button>}
     {providers.length === 0 ? <div className="empty-state"><h2>还没有反馈源</h2><p>连接 Redmine 或 TAPD 后，CodeFixer 才能收取真实 Bug。</p><button className="primary compact" onClick={openNew}>连接反馈源</button></div> : <div className="provider-grid refined-provider-grid">{providers.map(provider => {
-      const connectionState = connectionStates[provider.id]
-      const health = provider.enabled === false ? 'inactive' : connectionState ?? 'unknown'
+      const connection = connectionStates[provider.id]
+      const health = provider.enabled === false ? 'inactive' : connection?.status ?? 'unknown'
       const descriptor = provider.type === 'redmine' ? stringField(provider.baseUrl) : `Workspace ${stringField(provider.workspaceId)}`
-      return <article className="provider-card provider-channel" data-health={health} key={provider.id}><div className={`provider-monogram ${provider.type}`}><span>{provider.type === 'tapd' ? 'T' : 'R'}</span></div><div className="provider-body"><small>{provider.type === 'tapd' ? 'TAPD' : 'REDMINE'}</small><h2>{provider.name}</h2><code>{descriptor || '尚未填写服务信息'}</code><div className="provider-meta"><span><i className={health === 'ready' ? 'ready-dot' : health === 'failed' ? 'failed-dot' : ''}/>{health === 'ready' ? '连接正常' : health === 'failed' ? '连接失败' : health === 'inactive' ? '已停用' : '已配置 · 待验证'}</span></div></div><div className="provider-actions"><button className="ghost action-link" onClick={() => openEdit(provider)}>编辑</button><button className="ghost framed" disabled={busy === `test:${provider.id}`} onClick={() => void testConnection(provider.id)}>{busy === `test:${provider.id}` ? '测试中…' : '测试连接'}</button></div></article>
+      const readyLabel = connection?.username ? `连接正常 · ${connection.username}` : '连接正常'
+      return <article className="provider-card provider-channel" data-health={health} key={provider.id}><div className={`provider-monogram ${provider.type}`}><span>{provider.type === 'tapd' ? 'T' : 'R'}</span></div><div className="provider-body"><small>{provider.type === 'tapd' ? 'TAPD' : 'REDMINE'}</small><h2>{provider.name}</h2><code>{descriptor || '尚未填写服务信息'}</code><div className="provider-meta"><span><i className={health === 'ready' ? 'ready-dot' : health === 'failed' ? 'failed-dot' : ''}/>{health === 'ready' ? readyLabel : health === 'failed' ? '连接失败' : health === 'inactive' ? '已停用' : '已配置 · 待验证'}</span></div></div><div className="provider-actions"><button className="ghost action-link" onClick={() => openEdit(provider)}>编辑</button><button className="ghost framed" disabled={busy === `test:${provider.id}`} onClick={() => void testConnection(provider.id)}>{busy === `test:${provider.id}` ? '测试中…' : '测试连接'}</button></div></article>
     })}</div>}
     {show && <div className="modal-backdrop"><div className="config-modal provider-editor" role="dialog" aria-modal="true"><div className="modal-head"><div><small className="modal-kicker">TICKET PROVIDER</small><h2>{editingId ? '编辑反馈源' : '添加反馈源'}</h2><p>账号、密码和 Token 不会写进项目配置，也不会被页面回显。</p></div><button className="icon-btn" onClick={reset} aria-label="关闭">×</button></div>{editingId
       /* 编辑态类型不可改，两个按钮此时唯一的作用是「告诉你这是个什么源」，纯信息展示。
