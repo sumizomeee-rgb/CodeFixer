@@ -2,7 +2,10 @@ from pathlib import Path
 
 import pytest
 
-from codefixer.adapters.sources.directory import DirectoryReadOnlySourceAdapter
+from codefixer.adapters.sources.directory import (
+    DirectReadOnlySourceAdapter,
+    DirectoryReadOnlySourceAdapter,
+)
 from codefixer.application.ports.sources import SourcePolicy
 
 
@@ -40,3 +43,28 @@ def test_plain_localization_snapshot_rejects_stale_revision(tmp_path: Path) -> N
             workspace_path=tmp_path / "snapshot",
             base_revision="directory-stale",
         )
+
+
+def test_direct_localization_directory_is_used_in_place_and_never_deleted(tmp_path: Path) -> None:
+    source = tmp_path / "knowledge"
+    source.mkdir()
+    note = source / "notes.md"
+    note.write_text("live evidence\n", encoding="utf-8")
+    revision = "git-abc123"
+    adapter = DirectReadOnlySourceAdapter(
+        source, lambda: revision, source_type="git"
+    )
+
+    manifest = adapter.prepare(
+        source_id="knowledge",
+        run_id="run-direct:discovery",
+        workspace_path=tmp_path / "must-not-be-created",
+    )
+
+    assert manifest.workspace_path == source.resolve()
+    assert manifest.repository_path == source.resolve()
+    assert manifest.source_type == "git"
+    assert manifest.base_revision == revision
+    assert not (tmp_path / "must-not-be-created").exists()
+    adapter.cleanup(manifest)
+    assert note.read_text(encoding="utf-8") == "live evidence\n"

@@ -107,3 +107,29 @@ def test_route_ticket__redmine_does_not_fall_back_to_name_when_ids_differ():
         {"createdAt": "2026-08-11T00:00:00Z", "fixVersion": {"id": 99, "name": "4.7"}},
     )
     assert route_ticket(ticket, [project]).kind == "ignored_by_version"
+
+
+def test_route_ticket__requires_configured_title_text() -> None:
+    project = {
+        "id": "shop",
+        "intakeStartedAt": "2026-08-10T00:00:00Z",
+        "titleContains": "一键",
+        "routingRules": [
+            {"providerRef": "tapd-main", "priority": 1, "catchAll": True}
+        ],
+    }
+    matching = IngestedTicket(
+        "tapd-main",
+        "5",
+        "【一键养成】品质显示错误",
+        {"createdAt": "2026-08-11T00:00:00Z"},
+    )
+    unrelated = IngestedTicket(
+        "tapd-main",
+        "6",
+        "【公会战】排名显示错误",
+        {"createdAt": "2026-08-11T00:00:00Z"},
+    )
+
+    assert route_ticket(matching, [project]).kind == "matched"
+    assert route_ticket(unrelated, [project]).kind == "ignored_by_title"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -67,6 +68,9 @@ class RedmineTicketProvider:
             "providerId": self.provider_id,
             "username": username,
         }
+
+    def freeze_media(self, payload: dict[str, object], target: Path) -> list[dict[str, object]]:
+        return []
 
     @staticmethod
     def _version_items(values: list[object]) -> list[dict[str, str]]:

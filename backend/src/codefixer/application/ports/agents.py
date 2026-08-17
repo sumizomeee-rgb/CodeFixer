@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, Protocol
 
-AgentStage = Literal["scope_discovery", "discovery", "no_change_verify", "repair", "review"]
+AgentStage = Literal["discovery", "repair"]
 AgentAccess = Literal["read_only", "workspace_write"]
 AgentRunStatus = Literal["succeeded", "failed", "timed_out", "canceled"]
 AgentRuntimeName = Literal["claudeCode", "codex", "opencode"]

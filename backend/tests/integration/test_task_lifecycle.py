@@ -1,4 +1,5 @@
 import json
+import hashlib
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -60,3 +61,59 @@ def test_automatic_ingest_queues_one_active_run(tmp_path: Path):
                 (task['id'],),
             ).fetchone()[0]
             assert count == 1
+
+
+def test_completed_task_can_apply_frozen_files_to_localization(tmp_path: Path):
+    loaded = _loaded(tmp_path)
+    localization = tmp_path / "localization"
+    localization.mkdir()
+    (localization / "value.txt").write_text("old\n", encoding="utf-8")
+    loaded.config.projects = [
+        {
+            "id": "project-a",
+            "localizationSource": {
+                "id": "localization-a",
+                "path": str(localization),
+            },
+        }
+    ]
+    with TestClient(create_app(loaded)) as client:
+        with connect_database(client.app.state.db_path) as db:
+            store = TaskStore(db)
+            task = store.ingest(
+                IngestedTicket("tapd", "apply-1", "Bug", {"description": "wrong"}),
+                "project-a",
+                "automatic",
+            )
+            run_id = task["runs"][0]["id"]
+            store.claim_run(run_id)
+            store.complete_run(run_id, "changed")
+        run_root = loaded.data_root / "tasks" / task["id"] / "runs" / run_id
+        frozen = run_root / "freeze-change/files/value.txt"
+        frozen.parent.mkdir(parents=True)
+        content = b"new\n"
+        frozen.write_bytes(content)
+        (run_root / "freeze-change/change-manifest.json").write_text(
+            json.dumps(
+                {
+                    "files": [
+                        {
+                            "path": "value.txt",
+                            "operation": "modify",
+                            "content_sha256": hashlib.sha256(content).hexdigest(),
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        (run_root / "snapshot").mkdir()
+        (run_root / "snapshot/config-snapshot.json").write_text(
+            json.dumps({"project": loaded.config.projects[0]}), encoding="utf-8"
+        )
+
+        response = client.post(f"/api/tasks/{task['id']}/apply-to-localization")
+
+        assert response.status_code == 200
+        assert response.json()["copied"] == 1
+        assert (localization / "value.txt").read_text(encoding="utf-8") == "new\n"

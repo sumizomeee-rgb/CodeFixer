@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 
 from codefixer.infrastructure.database import connect_database
 from codefixer.infrastructure.task_store import TaskStore
+from codefixer.application.services.localization_apply import apply_frozen_change_to_localization
 
 router = APIRouter(prefix='/api/tasks', tags=['tasks'])
 
@@ -115,5 +116,36 @@ def cancel_task(task_id: str, request: Request) -> dict[str, object]:
             raise HTTPException(status_code=404, detail={'code':'task_not_found','message':f'任务不存在：{task_id}'}) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail={'code':'invalid_task_transition','message':str(exc)}) from exc
+    finally:
+        connection.close()
+
+
+@router.post('/{task_id}/apply-to-localization')
+def apply_to_localization(task_id: str, request: Request) -> dict[str, object]:
+    store, connection = _store(request)
+    try:
+        try:
+            task = store.get_task(task_id)
+            project_id = str(task.get('project_id') or '')
+            project = next(
+                (dict(item) for item in request.app.state.config_store.loaded.config.projects if str(item.get('id') or '') == project_id),
+                None,
+            )
+            if project is None:
+                raise ValueError('任务所属流水线已不存在')
+            result = apply_frozen_change_to_localization(
+                task=task,
+                data_root=request.app.state.config_store.loaded.data_root,
+                current_project=project,
+            )
+            return {
+                'target': str(result.target),
+                'copied': result.copied,
+                'deleted': result.deleted,
+            }
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail={'code':'task_not_found','message':f'任务不存在：{task_id}'}) from exc
+        except (OSError, ValueError) as exc:
+            raise HTTPException(status_code=409, detail={'code':'localization_apply_unavailable','message':str(exc)}) from exc
     finally:
         connection.close()

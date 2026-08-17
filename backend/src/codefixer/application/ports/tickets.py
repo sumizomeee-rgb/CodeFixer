@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol
 
 from codefixer.domain.tasks import IngestedTicket
@@ -21,3 +22,5 @@ class TicketProvider(Protocol):
     def list_versions(self) -> list[dict[str, str]]: ...
 
     def poll(self, cursor: str | None) -> TicketBatch: ...
+
+    def freeze_media(self, payload: dict[str, object], target: Path) -> list[dict[str, object]]: ...

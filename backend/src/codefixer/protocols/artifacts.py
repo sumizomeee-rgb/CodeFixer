@@ -131,7 +131,7 @@ class StageEntry:
     attempt: int | None
     inputs: tuple[tuple[str, Path], ...]
     output_path: Path
-    schema_path: Path
+    schema_path: Path | None = None
     notes: tuple[str, ...] = ()
 
 
@@ -142,13 +142,15 @@ def render_stage_entry(entry: StageEntry) -> str:
     lines.extend(["", "## Required inputs"])
     for label, path in entry.inputs:
         lines.append(f"- {label}: `{path.resolve()}`")
-    lines.extend([
-        "",
-        "## Output contract",
-        f"- Write the required JSON result to: `{entry.output_path.resolve()}`",
-        f"- It must validate against: `{entry.schema_path.resolve()}`",
-        "- Do not create delivery side effects. Do not change repositories outside the authorized workspace.",
-    ])
+    lines.extend(["", "## Output contract"])
+    if entry.schema_path is None:
+        lines.append(f"- Return a complete Markdown report. The platform will save it to: `{entry.output_path.resolve()}`")
+    else:
+        lines.extend([
+            f"- Write the required JSON result to: `{entry.output_path.resolve()}`",
+            f"- It must validate against: `{entry.schema_path.resolve()}`",
+        ])
+    lines.append("- Do not create delivery side effects. Do not change repositories outside the authorized workspace.")
     if entry.notes:
         lines.extend(["", "## Stage constraints", *[f"- {note}" for note in entry.notes]])
     lines.extend(["", "Read the referenced files yourself. Do not assume facts that are not supported by them.", ""])

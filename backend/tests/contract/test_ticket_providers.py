@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import httpx
+from pathlib import Path
 
 from codefixer.adapters.tickets.redmine import RedmineTicketProvider
 from codefixer.adapters.tickets.tapd import TapdTicketProvider
@@ -356,3 +357,52 @@ def test_tapd_provider__infers_requirement_version_like_haru_analyze():
         {"title": "【战双兄弟2.0】【v4.7、trunk】修复", "version_report": "4.8review"},
         "【v4.9】当前迭代",
     ) == "4.7"
+
+
+def test_tapd_provider__freezes_ticket_images_and_records_unavailable_attachments(tmp_path: Path):
+    image = b"\x89PNG\r\n\x1a\nmock"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/capture.png":
+            return httpx.Response(200, content=image, headers={"content-type": "image/png"})
+        raise AssertionError(request.url)
+
+    provider = TapdTicketProvider(
+        {"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic"}},
+        lambda _: None,
+        httpx.Client(base_url="https://www.tapd.cn", transport=httpx.MockTransport(handler)),
+    )
+
+    frozen = provider.freeze_media(
+        {
+            "description": '<p>截图</p><img src="/capture.png">',
+            "attachments": [{"filename": "missing.log"}],
+        },
+        tmp_path / "media",
+    )
+
+    assert frozen[0]["status"] == "ready"
+    assert Path(str(frozen[0]["path"])).read_bytes() == image
+    assert frozen[1]["status"] == "failed"
+    assert frozen[1]["reason"] == "反馈源未提供附件下载地址"
+
+
+def test_tapd_provider__does_not_save_html_capture_as_an_image(tmp_path: Path):
+    provider = TapdTicketProvider(
+        {"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic"}},
+        lambda _: None,
+        httpx.Client(
+            base_url="https://www.tapd.cn",
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(200, text="login", headers={"content-type": "text/html"})
+            ),
+        ),
+    )
+
+    frozen = provider.freeze_media(
+        {"description": '<img src="/capture.png">'}, tmp_path / "media"
+    )
+
+    assert frozen[0]["status"] == "failed"
+    assert "unsupported media type: text/html" in str(frozen[0]["reason"])
+    assert list((tmp_path / "media").iterdir()) == []

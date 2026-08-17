@@ -23,7 +23,8 @@ class FakeRunner:
 
 def fixture_files(tmp_path: Path) -> tuple[Path, Path, Path]:
     cwd = tmp_path / "repo"; cwd.mkdir()
-    entry = tmp_path / "entry.md"; entry.write_text("# Stage entry\nRead the ticket archive.\n", encoding="utf-8")
+    ticket = tmp_path / "ticket.md"; ticket.write_text("工单正文：按钮点击后闪退。\n", encoding="utf-8")
+    entry = tmp_path / "entry.md"; entry.write_text(f"# Stage entry\n\n- Complete ticket context: `{ticket.resolve()}`\n", encoding="utf-8")
     schema = tmp_path / "result.schema.json"; schema.write_text(json.dumps({"type":"object","required":["ok"],"properties":{"ok":{"type":"boolean"}}}), encoding="utf-8")
     return cwd, entry, schema
 
@@ -39,16 +40,17 @@ def test_claude_uses_print_json_schema_and_stage_permission(tmp_path: Path):
     result = runtime.run(request(tmp_path)); command=runner.calls[0]["command"]
     assert isinstance(command,list); assert command[:3]==["claude","--bare","-p"]; assert "--output-format" in command and "json" in command
     assert command[command.index("--permission-mode")+1]=="dontAsk"; assert command[command.index("--tools")+1]=="Read,Glob,Grep,Bash"
-    allowed_index=command.index("--allowedTools"); assert command[allowed_index+1:allowed_index+4]==["Read","Glob","Grep"]
+    allowed_index=command.index("--allowedTools"); assert command[allowed_index+1:allowed_index+5]==["Read","Glob","Grep","Bash"]
     assert "bypassPermissions" not in command; assert "--json-schema" in command; assert result.structured_output=={"ok":True}; assert result.session_id=="c1"
+    assert "工单正文：按钮点击后闪退。" in command[command.index("-p")+1]
 
 
 def test_claude_translates_draft_2020_schema_metadata(tmp_path: Path):
     cwd, entry, schema = fixture_files(tmp_path)
-    schema.write_text(json.dumps({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","$defs":{"answer":{"type":"boolean"}},"properties":{"ok":{"$ref":"#/$defs/answer"}}}),encoding="utf-8")
+    schema.write_text(json.dumps({"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","$defs":{"answer":{"type":["string","null"]},"failure":{"type":["object","null"],"required":["code"],"properties":{"code":{"type":"string"}}}},"properties":{"ok":{"$ref":"#/$defs/answer"},"failure":{"$ref":"#/$defs/failure"}}}),encoding="utf-8")
     runner=FakeRunner(ProcessResult(0,json.dumps({"structured_output":{"ok":True}}),"",False,.2));runtime=build_agent_runtime({"id":"discover","runtime":"claudeCode","executableRef":"claude"},{"claude":{"command":["claude"]}},runner=runner)
     runtime.run(AgentRequest(stage="discovery",entry_file=entry,cwd=cwd,access="read_only",output_schema=schema));command=runner.calls[0]["command"]
-    assert isinstance(command,list);translated=json.loads(command[command.index("--json-schema")+1]);assert "$schema" not in translated;assert "definitions" in translated;assert translated["properties"]["ok"]["$ref"]=="#/definitions/answer"
+    assert isinstance(command,list);translated=json.loads(command[command.index("--json-schema")+1]);assert "$schema" not in translated;assert "definitions" in translated;assert translated["properties"]["ok"]["$ref"]=="#/definitions/answer";assert translated["definitions"]["answer"]["anyOf"]==[{"type":"string"},{"type":"null"}];assert translated["definitions"]["failure"]["anyOf"][0]["required"]==["code"]
 
 
 def test_claude_repair_allows_file_edits_but_not_unrestricted_shell(tmp_path: Path):

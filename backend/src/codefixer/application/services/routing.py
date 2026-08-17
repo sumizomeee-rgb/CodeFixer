@@ -12,6 +12,7 @@ RouteKind = Literal[
     "ambiguous",
     "ignored_before_intake",
     "ignored_by_version",
+    "ignored_by_title",
 ]
 
 
@@ -102,6 +103,7 @@ def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> Rout
     ticket_created_at = _timestamp(ticket.payload.get("createdAt"))
     provider_rule_seen = False
     version_accepted = False
+    title_accepted = False
     for project in projects:
         project_id = str(project.get("id", "")).strip()
         if not project_id or project.get("enabled", True) is False:
@@ -113,6 +115,10 @@ def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> Rout
             if not _version_matches(ticket.payload, rule):
                 continue
             version_accepted = True
+            title_contains = str(project.get("titleContains") or "").strip()
+            if title_contains and title_contains not in ticket.title:
+                continue
+            title_accepted = True
             conditions = rule.get("conditions") or []
             if rule.get("catchAll") is True or all(
                 _condition_matches(ticket.payload, condition) for condition in conditions
@@ -128,6 +134,8 @@ def route_ticket(ticket: IngestedTicket, projects: list[dict[str, Any]]) -> Rout
     if not candidates:
         if provider_rule_seen and not version_accepted:
             return RouteDecision("ignored_by_version", None)
+        if provider_rule_seen and version_accepted and not title_accepted:
+            return RouteDecision("ignored_by_title", None)
         return RouteDecision(
             "not_found",
             None,

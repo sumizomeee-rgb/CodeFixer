@@ -27,5 +27,6 @@ export const api={
   startTask:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}/start`,{method:'POST'}),
   cancelTask:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}/cancel`,{method:'POST'}),
   retryDelivery:(id:string)=>request<TaskRecord>(`/api/tasks/${encodeURIComponent(id)}/retry-delivery`,{method:'POST'}),
+  applyToLocalization:(id:string)=>request<{target:string;copied:number;deleted:number}>(`/api/tasks/${encodeURIComponent(id)}/apply-to-localization`,{method:'POST'}),
   setSecret:(key:string,value:string)=>request<{key:string;configured:boolean}>(`/api/secrets/${encodeURIComponent(key)}`,{method:'PUT',body:JSON.stringify({value})}),
 }

@@ -58,6 +58,8 @@ export type ProjectConfig = {
   createdAt?:string
   intakeStartedAt?:string
   pollIntervalSeconds?:number
+  titleContains?:string
+  localizationPrompt?:string
   routingRules?:RoutingRule[]
   localizationSource?:LocalizationSourceConfig
   modificationWorkspace?:ModificationWorkspaceConfig

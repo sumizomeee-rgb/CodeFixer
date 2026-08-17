@@ -18,7 +18,7 @@ def test_gitlab_delivery_health_uses_local_repository_origin(tmp_path: Path):
     git(repository, "init")
     git(repository, "remote", "add", "origin", str(remote))
 
-    healthy, summary = _git_delivery_health(repository, ["git"])
+    healthy, summary = _git_delivery_health(str(remote), ["git"], cwd=repository)
 
     assert healthy is True
     assert str(remote) in summary

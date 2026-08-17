@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import datetime
+import hashlib
+import mimetypes
 import re
+from pathlib import Path
+from urllib.parse import urljoin, urlparse
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -11,6 +15,11 @@ from codefixer.application.ports.tickets import TicketBatch
 from codefixer.domain.tasks import IngestedTicket
 
 SecretGetter = Callable[[str], str | None]
+_IMAGE_SOURCE = re.compile(r'<img\b[^>]*\bsrc=["\']([^"\']+)["\']', re.IGNORECASE)
+_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+_MAX_MEDIA_ITEMS = 20
+_MAX_MEDIA_BYTES = 12 * 1024 * 1024
+_MAX_TOTAL_MEDIA_BYTES = 64 * 1024 * 1024
 
 _VERSION = re.compile(r"(?<![\d.])[vV]?(?P<major>\d{1,2})\.(?P<minor>\d{1,2})(?![\d.])")
 _PREFIXED_VERSION = re.compile(r"(?<![A-Za-z0-9.])[vV](?P<major>\d{1,2})\.(?P<minor>\d{1,2})(?![\d.])")
@@ -110,6 +119,58 @@ class TapdTicketProvider:
             "providerId": self.provider_id,
             "username": assignee,
         }
+
+    def freeze_media(self, payload: dict[str, object], target: Path) -> list[dict[str, object]]:
+        candidates: list[tuple[str, str]] = []
+        description = str(payload.get("description") or "")
+        for index, source in enumerate(_IMAGE_SOURCE.findall(description), start=1):
+            candidates.append((f"正文图片 {index}", urljoin("https://www.tapd.cn", source)))
+        attachments = payload.get("attachments")
+        if isinstance(attachments, list):
+            for item in attachments:
+                if not isinstance(item, dict):
+                    continue
+                source = str(
+                    item.get("download_url")
+                    or item.get("downloadUrl")
+                    or item.get("url")
+                    or ""
+                ).strip()
+                candidates.append(
+                    (
+                        str(item.get("filename") or item.get("name") or "附件"),
+                        urljoin("https://www.tapd.cn", source) if source else "",
+                    )
+                )
+        target.mkdir(parents=True, exist_ok=True)
+        frozen: list[dict[str, object]] = []
+        total = 0
+        seen: set[str] = set()
+        for label, source in candidates[:_MAX_MEDIA_ITEMS]:
+            if not source:
+                frozen.append({"label": label, "sourceUrl": "", "status": "failed", "reason": "反馈源未提供附件下载地址"})
+                continue
+            if source in seen:
+                continue
+            seen.add(source)
+            try:
+                response = self.client.get(source, follow_redirects=True)
+                response.raise_for_status()
+                content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+                content = response.content
+                if content_type not in _IMAGE_TYPES:
+                    raise ValueError(f"unsupported media type: {content_type or 'unknown'}")
+                if not content or len(content) > _MAX_MEDIA_BYTES or total + len(content) > _MAX_TOTAL_MEDIA_BYTES:
+                    raise ValueError("media size limit exceeded")
+                suffix = mimetypes.guess_extension(content_type) or Path(urlparse(source).path).suffix or ".bin"
+                digest = hashlib.sha256(content).hexdigest()
+                path = target / f"{len(frozen) + 1:02d}-{digest[:12]}{suffix}"
+                path.write_bytes(content)
+                total += len(content)
+                frozen.append({"label": label, "sourceUrl": source, "path": str(path.resolve()), "contentType": content_type, "sizeBytes": len(content), "sha256": digest, "status": "ready"})
+            except (httpx.HTTPError, OSError, ValueError) as exc:
+                frozen.append({"label": label, "sourceUrl": source, "status": "failed", "reason": str(exc)[:300]})
+        return frozen
 
     def list_versions(self) -> list[dict[str, str]]:
         iterations = self._paged_objects(

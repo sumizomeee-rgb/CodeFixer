@@ -141,6 +141,8 @@
       "properties": {
         "id": {"type": "string", "minLength": 1},
         "name": {"type": "string", "minLength": 1},
+        "localizationPrompt": {"type": "string", "maxLength": 8000},
+        "titleContains": {"type": "string", "maxLength": 200},
         "intakeStartedAt": {"type": "string", "format": "date-time"},
         "routingRules": {"type": "array", "items": {"$ref": "#/$defs/routingRule"}},
         "localizationSource": {"$ref": "#/$defs/localizationSource"},

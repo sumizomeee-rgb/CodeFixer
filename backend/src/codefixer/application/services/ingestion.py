@@ -28,6 +28,7 @@ class IngestionService:
         failed_route = 0
         ignored_before_intake = 0
         ignored_by_version = 0
+        ignored_by_title = 0
         task_ids: list[str] = []
         for ticket in batch.tickets:
             if ticket.provider_instance_id != provider_id:
@@ -38,6 +39,9 @@ class IngestionService:
                 continue
             if route.kind == "ignored_by_version":
                 ignored_by_version += 1
+                continue
+            if route.kind == "ignored_by_title":
+                ignored_by_title += 1
                 continue
             if route.kind == "matched":
                 matched += 1
@@ -57,6 +61,7 @@ class IngestionService:
             "ingested": len(task_ids),
             "ignoredBeforeIntake": ignored_before_intake,
             "ignoredByVersion": ignored_by_version,
+            "ignoredByTitle": ignored_by_title,
             "matched": matched,
             "routingFailed": failed_route,
             "nextCursor": batch.next_cursor,

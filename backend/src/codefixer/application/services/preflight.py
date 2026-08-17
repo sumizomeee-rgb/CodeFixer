@@ -125,6 +125,10 @@ def normalize_project_configuration(project: dict[str, Any]) -> dict[str, Any]:
     if poll_interval < 60 or poll_interval > 7 * 24 * 60 * 60:
         raise ValueError("收单冷却时间必须在 1 分钟到 7 天之间")
     normalized["pollIntervalSeconds"] = poll_interval
+    title_contains = str(normalized.get("titleContains") or "").strip()
+    if len(title_contains) > 200:
+        raise ValueError("标题包含条件不能超过 200 个字符")
+    normalized["titleContains"] = title_contains
     for rule in normalized.get("routingRules") or []:
         if not isinstance(rule, dict):
             raise ValueError("工单接收规则格式无效")

@@ -47,7 +47,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert changed.json()["mode"] == "automatic"
         etag = changed.json()["etag"]
         repository = repo
-        project = {"id": "demo", "name": "Demo", "routingRules": [{"id": "primary", "providerRef": "tapd", "priority": 100, "catchAll": True, "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}}], "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"locationType": "local", "localPath": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "submitterName": "Tester"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
+        project = {"id": "demo", "name": "Demo", "titleContains": "一键", "routingRules": [{"id": "primary", "providerRef": "tapd", "priority": 100, "catchAll": True, "versionFilter": {"mode": "selected", "versions": [{"id": "v47", "name": "4.7"}]}}], "localizationSource": {"type": "directory", "path": str(repository)}, "modificationWorkspace": {"locationType": "local", "localPath": str(repository), "allowedRoots": ["."], "deniedRoots": [], "allowedExtensions": []}, "deliveryLog": {"technologyTag": "Python", "submitterName": "Tester"}, "finalActions": [{"id": "patch", "type": "patch", "outputDirectory": str(tmp_path / "patches")}]}
         created = client.post("/api/projects", json=project, headers={"If-Match": etag})
         assert created.status_code == 201
         project_id = created.json()["project"]["id"]
@@ -56,6 +56,7 @@ def test_project_crud_preflight_and_etag__is_persistent(tmp_path: Path, monkeypa
         assert created.json()["project"]["intakeStartedAt"]
         assert created.json()["project"]["createdAt"] == created.json()["project"]["intakeStartedAt"]
         assert created.json()["project"]["pollIntervalSeconds"] == 1200
+        assert created.json()["project"]["titleContains"] == "一键"
         assert created.json()["project"]["verification"] == {
             "timeoutSeconds": 1200,
             "steps": [],

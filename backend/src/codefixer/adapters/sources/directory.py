@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import os
 import shutil
+from collections.abc import Callable
 from pathlib import Path
 
 from codefixer.application.ports.sources import CandidateChange, SourcePolicy, WorkspaceManifest
@@ -71,3 +72,45 @@ class DirectoryReadOnlySourceAdapter:
     def cleanup(self, manifest: WorkspaceManifest) -> None:
         if manifest.workspace_path.exists():
             shutil.rmtree(manifest.workspace_path, ignore_errors=True)
+
+
+class DirectReadOnlySourceAdapter:
+    """Expose the configured localization directory in place without copying it."""
+
+    def __init__(self, directory: Path, revision: Callable[[], str], *, source_type: str = "directory") -> None:
+        self.directory = directory.resolve()
+        self._revision = revision
+        self.source_type = source_type
+
+    def current_revision(self) -> str:
+        return self._revision()
+
+    def prepare(
+        self,
+        *,
+        source_id: str,
+        run_id: str,
+        workspace_path: Path,
+        base_revision: str | None = None,
+    ) -> WorkspaceManifest:
+        if not self.directory.is_dir():
+            raise ValueError(f"localization directory does not exist: {self.directory}")
+        revision = self.current_revision()
+        if base_revision is not None and base_revision != revision:
+            raise ValueError("localization directory changed before discovery")
+        return WorkspaceManifest(
+            source_type=self.source_type,
+            source_id=source_id,
+            repository_path=self.directory,
+            workspace_path=self.directory,
+            base_revision=revision,
+        )
+
+    def collect_change(self, manifest: WorkspaceManifest, policy: SourcePolicy) -> CandidateChange:
+        raise PermissionError("localization directories are read-only")
+
+    def restore_candidate(self, manifest: WorkspaceManifest, candidate: CandidateChange) -> None:
+        raise PermissionError("localization directories are read-only")
+
+    def cleanup(self, manifest: WorkspaceManifest) -> None:
+        return None

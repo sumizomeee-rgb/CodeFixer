@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Mapping
+from collections.abc import Mapping
 
 from codefixer.adapters.agents.base import BaseCliAgentRuntime, first_string, nested_get, parse_json_lines, stage_prompt
 from codefixer.application.ports.agents import AgentRequest, AgentRunResult
@@ -16,22 +16,7 @@ _READ_ONLY_PERMISSION = {
     "lsp": "allow",
     "external_directory": "deny",
     "edit": "deny",
-    "bash": {
-        "pwd": "allow",
-        "ls *": "allow",
-        "find *": "allow",
-        "cat *": "allow",
-        "head *": "allow",
-        "tail *": "allow",
-        "sed *": "allow",
-        "grep *": "allow",
-        "rg *": "allow",
-        "git status *": "allow",
-        "git diff *": "allow",
-        "git log *": "allow",
-        "git show *": "allow",
-        "git grep *": "allow",
-    },
+    "bash": "allow",
 }
 
 _WRITE_PERMISSION = {

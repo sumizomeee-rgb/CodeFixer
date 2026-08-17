@@ -9,7 +9,7 @@ from codefixer.infrastructure.process_runner import ProcessResult
 
 _READ_ONLY_TOOLS = "Read,Glob,Grep,Bash"
 _WRITE_TOOLS = "Read,Glob,Grep,Bash,Edit,Write"
-_READ_ONLY_ALLOWED = ("Read", "Glob", "Grep")
+_READ_ONLY_ALLOWED = ("Read", "Glob", "Grep", "Bash")
 _WRITE_ALLOWED = ("Read", "Glob", "Grep", "Edit", "Write")
 
 
@@ -19,6 +19,19 @@ def _claude_compatible_schema(value: object) -> object:
         return [_claude_compatible_schema(item) for item in value]
     if not isinstance(value, dict):
         return value
+    type_value = value.get("type")
+    if isinstance(type_value, list):
+        constraints = _claude_compatible_schema(
+            {key: child for key, child in value.items() if key not in {"$schema", "type"}}
+        )
+        shared = constraints if isinstance(constraints, dict) else {}
+        return {
+            "anyOf": [
+                {"type": item} if item == "null" else {"type": item, **shared}
+                for item in type_value
+                if isinstance(item, str)
+            ]
+        }
     result: dict[str, object] = {}
     for key, child in value.items():
         if key == "$schema":

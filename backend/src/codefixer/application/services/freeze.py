@@ -25,7 +25,7 @@ def freeze_change(
     manifest: WorkspaceManifest,
     candidate: CandidateChange,
     verification: StoredArtifact,
-    review: StoredArtifact,
+    coding_result: StoredArtifact,
     config_sha256: str,
     change_version: int = 1,
 ) -> tuple[StoredArtifact, StoredArtifact]:
@@ -61,7 +61,7 @@ def freeze_change(
         "files": files,
         "source_commits": [],
         "verification_sha256": verification.sha256,
-        "review_sha256": review.sha256,
+        "coding_result_sha256": coding_result.sha256,
         "config_sha256": config_sha256,
     }
     manifest_artifact = artifacts.write_json(

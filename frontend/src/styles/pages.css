@@ -57,6 +57,10 @@
 .fact-grid small { margin-bottom: 5px; color: var(--tertiary); font: 500 10px/1 var(--font-mono); }
 .fact-grid b { font-size: 12px; }
 .task-actions { display: flex; justify-content: flex-end; gap: 10px; margin: 13px 0; }
+.apply-localization { display: inline-flex; align-items: center; gap: 7px; }
+.apply-localization svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.apply-localization-notice { margin-right: auto; align-self: center; color: var(--success); font-size: 12px; }
+.polished-form label > em { color: var(--tertiary); font: 500 10px/1 var(--font-mono); font-style: normal; letter-spacing: .08em; }
 .drawer-section { margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--line-strong); }
 .drawer-section > h3 { margin: 4px 0 14px; }
 
@@ -163,7 +167,8 @@
 .preflight-issue { grid-column: 1; }
 .project-card-actions { display: flex; grid-area: 1 / 2 / 2 / 3; gap: 8px; }
 /* 三个按钮原本三种规格（11px 有框 / 14px 无框 / 14px 有框），字号都不齐。统一成一种。 */
-.project-card-actions button { min-height: 28px; padding: 5px 10px; font-size: 11px; }
+.project-card-actions button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-height: 28px; padding: 5px 10px; font-size: 11px; }
+.project-card-actions button svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.4; }
 /* 路径链紧贴排列，不再用 1fr 60px 1fr 把两侧顶到卡的两端——实测左路径文字只有 114px，
    却被推到 509px 宽的格子里，箭头孤悬在中间，两侧各留一片 400px 的空。 */
 .project-path-story { display: flex; align-items: baseline; gap: 9px; margin: 11px 0 0; min-width: 0; }
@@ -270,6 +275,11 @@
 .path-field > span { display: block; margin-bottom: 7px; }
 .path-field > div { display: flex; gap: 9px; }
 .path-field input { flex: 1; min-width: 0; margin: 0; }
+.localization-prompt-field { display: grid; gap: 7px; }
+.localization-prompt-field > span { color: var(--muted); font-size: 12px; font-weight: 600; }
+.localization-prompt-field em { color: var(--tertiary); font: 500 10px/1 var(--font-mono); font-style: normal; letter-spacing: .08em; }
+.localization-prompt-field textarea { min-height: 112px; resize: vertical; line-height: 1.65; }
+.localization-prompt-field small { color: var(--tertiary); font-size: 11px; }
 .path-chip { display: grid; place-items: center; flex: 0 0 auto; min-width: 58px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-2); color: var(--tertiary); font: 600 10px/1 var(--font-mono); }
 .source-separation { display: grid; grid-template-columns: 1fr 80px 1fr; align-items: center; gap: 15px; margin-top: 28px; padding: 18px; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .source-separation div { padding-left: 11px; border-left: 3px solid var(--line-strong); }

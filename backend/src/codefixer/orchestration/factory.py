@@ -17,7 +17,7 @@ from codefixer.adapters.delivery.gitlab import (
     GitLabPushFinalAction,
 )
 from codefixer.adapters.delivery_patch import FallbackPatchFinalAction, PatchFinalAction
-from codefixer.adapters.sources.directory import DirectoryReadOnlySourceAdapter
+from codefixer.adapters.sources.directory import DirectoryReadOnlySourceAdapter, DirectReadOnlySourceAdapter
 from codefixer.adapters.sources.git import GitSourceAdapter
 from codefixer.adapters.sources.svn import SvnSourceAdapter
 from codefixer.adapters.tickets.factory import build_ticket_provider
@@ -143,17 +143,23 @@ class RunExecutor:
         localization_repository_value = str(localization_detection.get("repositoryRoot") or localization_path)
         localization_repository = Path(localization_repository_value).resolve()
         if localization_detection.get("vcsKind") == "git":
-            localization_source: ModificationSourceAdapter = GitSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "git-cli"))
+            localization_revision_source: ModificationSourceAdapter = GitSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "git-cli"))
         elif localization_detection.get("vcsKind") == "svn":
-            localization_source = SvnSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "svn-cli"), baseline_source="working_copy")
+            localization_revision_source = SvnSourceAdapter(localization_repository, self._command(loaded.config.executableBindings, "svn-cli"), baseline_source="working_copy")
         else:
-            localization_source = DirectoryReadOnlySourceAdapter(localization_path)
+            localization_revision_source = DirectoryReadOnlySourceAdapter(localization_path)
+        localization_source = DirectReadOnlySourceAdapter(
+            localization_path,
+            localization_revision_source.current_revision,
+            source_type=localization_revision_source.source_type,
+        )
 
         provider_id = str(run_summary.get("provider_instance_id", ""))
         provider_config = next((dict(item) for item in loaded.config.ticketProviders if str(item.get("id")) == provider_id), None)
         if provider_config is None:
             raise ValueError(f"ticket provider no longer exists: {provider_id}")
-        stability_guard = PreDeliveryStabilityGuard(build_ticket_provider(provider_config, self.config_store.get_secret), source)
+        ticket_provider = build_ticket_provider(provider_config, self.config_store.get_secret)
+        stability_guard = PreDeliveryStabilityGuard(ticket_provider, source)
 
         profiles = {str(item.get("id")): dict(item) for item in loaded.config.agentProfiles if item.get("id")}
         current_profile_id = loaded.config.execution.currentModelId.strip()
@@ -165,10 +171,8 @@ class RunExecutor:
         pool = LlmSlotPool(database_path, capacity=loaded.config.execution.maxConcurrentLlmCalls)
         def leased_runtime() -> LeasedAgentRuntime:
             return LeasedAgentRuntime(build_agent_runtime(current_profile, loaded.config.executableBindings), pool, task_run_id=run_id)
-        scope_discovery_agent = leased_runtime()
         discovery_agent = leased_runtime()
         repair_agent = leased_runtime()
-        review_agent = leased_runtime()
 
         verification_config = project.get("verification") or {}
         default_timeout = int(verification_config.get("timeoutSeconds", 1200))
@@ -193,10 +197,8 @@ class RunExecutor:
             artifact_index=ArtifactIndex(self.connection, loaded.data_root),
             source=source,
             localization_source=localization_source,
-            scope_discovery_agent=scope_discovery_agent,
             discovery_agent=discovery_agent,
             repair_agent=repair_agent,
-            review_agent=review_agent,
             verification_runner=VerificationRunner(),
             verification_steps=tuple(verification_steps),
             project=project,
@@ -205,7 +207,7 @@ class RunExecutor:
                 tuple(actions),
                 fallback_action=FallbackPatchFinalAction(store=delivery_store, data_root=loaded.data_root, project_id=project_id),
             ),
-            max_repair_attempts=loaded.config.execution.maxRepairAttempts,
+            ticket_provider=ticket_provider,
             stability_guard=stability_guard,
         ).run(run_id)
 
