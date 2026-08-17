@@ -43,7 +43,10 @@ class RedmineTicketProvider:
         return payload
 
     def test_connection(self) -> dict[str, object]:
-        payload = self._get("/issues.json", {"limit": 1, "status_id": "*"})
+        payload = self._get(
+            "/issues.json",
+            {"assigned_to_id": "me", "limit": 1, "status_id": "*"},
+        )
         return {"ready": isinstance(payload.get("issues"), list), "providerId": self.provider_id}
 
     @staticmethod
@@ -164,6 +167,7 @@ class RedmineTicketProvider:
         while True:
             params: dict[str, object] = {
                 "status_id": "*",
+                "assigned_to_id": "me",
                 "limit": limit,
                 "offset": offset,
                 "sort": "updated_on,id",

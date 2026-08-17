@@ -42,33 +42,49 @@ class TapdTicketProvider:
         self.workspace_id = str(config.get("workspaceId", ""))
         if not self.workspace_id:
             raise ValueError("TAPD workspaceId is required")
-        if client is not None:
-            self.client = client
-            return
         auth_config = config.get("auth") or {}
         mode = str(auth_config.get("mode", "basic"))
+        username: str | None = None
+        self.auth_mode = mode
         if mode == "basic":
             username = get_secret(str(auth_config.get("usernameSecretRef", "")))
             password = get_secret(str(auth_config.get("passwordSecretRef", "")))
-            if not username or not password:
+            if client is None and (not username or not password):
                 raise ValueError("missing TAPD Basic Auth secrets")
-            self.client = httpx.Client(
-                base_url="https://api.tapd.cn",
-                auth=httpx.BasicAuth(username, password),
-                headers={"Accept": "application/json"},
-                timeout=30.0,
-            )
+            if client is None:
+                self.client = httpx.Client(
+                    base_url="https://api.tapd.cn",
+                    auth=httpx.BasicAuth(str(username), str(password)),
+                    headers={"Accept": "application/json"},
+                    timeout=30.0,
+                )
         elif mode == "oauth":
             token = get_secret(str(auth_config.get("tokenSecretRef", "")))
-            if not token:
+            if client is None and not token:
                 raise ValueError("missing TAPD OAuth token secret")
-            self.client = httpx.Client(
-                base_url="https://api.tapd.cn",
-                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
-                timeout=30.0,
-            )
+            if client is None:
+                self.client = httpx.Client(
+                    base_url="https://api.tapd.cn",
+                    headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+                    timeout=30.0,
+                )
         else:
             raise ValueError(f"unsupported TAPD auth mode: {mode}")
+        if client is not None:
+            self.client = client
+        self.assignee = str(username or "").strip()
+
+    def _current_assignee(self) -> str:
+        if self.assignee:
+            return self.assignee
+        if self.auth_mode == "oauth":
+            payload = self._get("/users/info", {})
+            user = payload.get("data")
+            if isinstance(user, dict):
+                self.assignee = str(user.get("name") or user.get("nick") or "").strip()
+        if not self.assignee:
+            raise ValueError("TAPD authenticated user cannot be identified")
+        return self.assignee
 
     def _get(self, path: str, params: dict[str, object]) -> dict[str, Any]:
         response = self.client.get(path, params=params)
@@ -79,10 +95,21 @@ class TapdTicketProvider:
         return payload
 
     def test_connection(self) -> dict[str, object]:
+        assignee = self._current_assignee()
         payload = self._get(
-            "/bugs", {"workspace_id": self.workspace_id, "limit": 1, "page": 1}
+            "/bugs",
+            {
+                "workspace_id": self.workspace_id,
+                "current_owner": assignee,
+                "limit": 1,
+                "page": 1,
+            },
         )
-        return {"ready": isinstance(payload.get("data"), list), "providerId": self.provider_id}
+        return {
+            "ready": isinstance(payload.get("data"), list),
+            "providerId": self.provider_id,
+            "assignee": assignee,
+        }
 
     def list_versions(self) -> list[dict[str, str]]:
         iterations = self._paged_objects(
@@ -120,6 +147,15 @@ class TapdTicketProvider:
             for item in iterations
             if item.get("id")
         }
+
+    @staticmethod
+    def _assigned_to_current_user(bug: dict[str, Any], assignee: str) -> bool:
+        owners = {
+            value.strip()
+            for value in str(bug.get("current_owner") or "").split(";")
+            if value.strip()
+        }
+        return assignee in owners
 
     @staticmethod
     def _requirement_version(bug: dict[str, Any], iteration_name: str) -> str | None:
@@ -174,7 +210,11 @@ class TapdTicketProvider:
         }
 
     def poll(self, cursor: str | None) -> TicketBatch:
-        bug_params: dict[str, object] = {"workspace_id": self.workspace_id}
+        assignee = self._current_assignee()
+        bug_params: dict[str, object] = {
+            "workspace_id": self.workspace_id,
+            "current_owner": assignee,
+        }
         if cursor:
             try:
                 parsed_cursor = datetime.fromisoformat(cursor.replace("Z", "+00:00"))
@@ -192,6 +232,8 @@ class TapdTicketProvider:
                 continue
             if newest is None or modified > newest:
                 newest = modified
+            if not self._assigned_to_current_user(bug, assignee):
+                continue
             bug_id = str(bug["id"])
             enriched = self._enrich(bug_id)
             iteration_name = iteration_names.get(str(bug.get("iteration_id") or ""), "")

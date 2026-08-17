@@ -119,7 +119,7 @@ def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: 
             "/api/providers",
             headers={"If-Match": etag},
             json={
-                "provider": {"name": "Haru", "type": "tapd", "workspaceId": "45286624", "auth": {"mode": "oauth"}, "pollIntervalSeconds": 60},
+                "provider": {"name": "Haru", "type": "tapd", "workspaceId": "45286624", "auth": {"mode": "oauth"}, "pollIntervalSeconds": 60, "assignee": "不应保存"},
                 "secrets": {"token": "token-value"},
             },
         )
@@ -129,6 +129,7 @@ def test_provider_crud__generates_internal_id_and_keeps_name_editable(tmp_path: 
         assert provider["id"] != provider["name"]
         assert provider["name"] == "Haru"
         assert "pollIntervalSeconds" not in provider
+        assert "assignee" not in provider
 
         renamed = client.put(
             f"/api/providers/{provider['id']}",

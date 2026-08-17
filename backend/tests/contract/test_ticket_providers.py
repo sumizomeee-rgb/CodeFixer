@@ -12,6 +12,7 @@ def test_redmine_provider__freezes_full_issue_and_uses_incremental_filter():
     def handler(request: httpx.Request) -> httpx.Response:
         seen.append(request)
         if request.url.path == "/issues.json":
+            assert request.url.params["assigned_to_id"] == "me"
             return httpx.Response(200, json={"issues": [{"id": 7, "subject": "A", "updated_on": "2026-08-12T00:00:00Z"}], "total_count": 1})
         if request.url.path == "/issue_statuses.json":
             return httpx.Response(200, json={"issue_statuses": [{"id": 1, "name": "New", "is_closed": False}]})
@@ -114,11 +115,13 @@ def test_redmine_provider__discovers_version_catalogs_from_visible_issue_project
 
 def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
     paths: list[str] = []
+    requests: list[httpx.Request] = []
 
     def handler(request: httpx.Request) -> httpx.Response:
         paths.append(request.url.path)
+        requests.append(request)
         if request.url.path == "/bugs":
-            return httpx.Response(200, json={"status": 1, "data": [{"Bug": {"id": "1010000000000000001", "title": "B", "description": "detail", "status": "in_progress", "module": "商城", "created": "2026-08-10 01:00:00", "modified": "2026-08-12 01:00:00", "closed": None}}]})
+            return httpx.Response(200, json={"status": 1, "data": [{"Bug": {"id": "1010000000000000001", "title": "B", "description": "detail", "status": "in_progress", "module": "商城", "current_owner": "Tester;", "created": "2026-08-10 01:00:00", "modified": "2026-08-12 01:00:00", "closed": None}}]})
         if request.url.path == "/comments":
             return httpx.Response(200, json={"status": 1, "data": [{"Comment": {"id": "c1", "description": "note"}}]})
         if request.url.path == "/attachments":
@@ -132,7 +135,7 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
         raise AssertionError(request.url)
 
     client = httpx.Client(base_url="https://api.tapd.cn", transport=httpx.MockTransport(handler), auth=httpx.BasicAuth("u", "p"))
-    provider = TapdTicketProvider({"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic", "usernameSecretRef": "u", "passwordSecretRef": "p"}}, lambda key: {"u": "u", "p": "p"}.get(key), client)
+    provider = TapdTicketProvider({"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic", "usernameSecretRef": "u", "passwordSecretRef": "p"}}, lambda key: {"u": "Tester", "p": "p"}.get(key), client)
     batch = provider.poll("2026-08-11 00:00:00")
     assert batch.next_cursor == "2026-08-12 01:00:00"
     ticket = batch.tickets[0]
@@ -142,6 +145,8 @@ def test_tapd_provider__supports_basic_auth_and_freezes_related_evidence():
     assert ticket.payload["attachments"] == [{"id": "a1", "filename": "x.png"}]
     assert ticket.payload["changes"] == [{"id": "h1", "field": "status"}]
     assert "/bugs/get_link_bugs" in paths
+    bugs_request = next(request for request in requests if request.url.path == "/bugs")
+    assert bugs_request.url.params["current_owner"] == "Tester"
 
 
 def test_tapd_provider__uses_intake_cursor_as_server_side_modified_filter():
@@ -157,14 +162,98 @@ def test_tapd_provider__uses_intake_cursor_as_server_side_modified_filter():
 
     client = httpx.Client(base_url="https://api.tapd.cn", transport=httpx.MockTransport(handler))
     provider = TapdTicketProvider(
-        {"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic"}},
-        lambda _: None,
+        {"id": "tapd", "type": "tapd", "workspaceId": "101", "auth": {"mode": "basic", "usernameSecretRef": "u"}},
+        lambda key: "Tester" if key == "u" else None,
         client,
     )
 
     provider.poll("2026-08-15T18:53:27+08:00")
 
     assert seen_modified == [">=2026-08-15 18:53:27"]
+
+
+def test_tapd_provider__rejects_unassigned_bug_even_if_api_returns_it():
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/bugs":
+            assert request.url.params["current_owner"] == "Tester"
+            return httpx.Response(
+                200,
+                json={
+                    "status": 1,
+                    "data": [
+                        {
+                            "Bug": {
+                                "id": "other-bug",
+                                "title": "不属于当前用户",
+                                "current_owner": "Someone Else;",
+                                "modified": "2026-08-16 01:00:00",
+                            }
+                        }
+                    ],
+                },
+            )
+        if request.url.path == "/iterations":
+            return httpx.Response(200, json={"status": 1, "data": []})
+        raise AssertionError(request.url)
+
+    provider = TapdTicketProvider(
+        {
+            "id": "tapd",
+            "type": "tapd",
+            "workspaceId": "101",
+            "auth": {"mode": "basic", "usernameSecretRef": "u"},
+        },
+        lambda key: "Tester" if key == "u" else None,
+        httpx.Client(
+            base_url="https://api.tapd.cn",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+    batch = provider.poll("2026-08-15 00:00:00")
+
+    assert batch.tickets == []
+    assert batch.next_cursor == "2026-08-16 01:00:00"
+
+
+def test_tapd_provider__resolves_oauth_user_before_polling():
+    seen_paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen_paths.append(request.url.path)
+        if request.url.path == "/users/info":
+            return httpx.Response(
+                200,
+                json={
+                    "status": 1,
+                    "data": {"id": "7", "nick": "tester", "name": "Tester"},
+                },
+            )
+        if request.url.path == "/bugs":
+            assert request.url.params["current_owner"] == "Tester"
+            return httpx.Response(200, json={"status": 1, "data": []})
+        if request.url.path == "/iterations":
+            return httpx.Response(200, json={"status": 1, "data": []})
+        raise AssertionError(request.url)
+
+    provider = TapdTicketProvider(
+        {
+            "id": "tapd",
+            "type": "tapd",
+            "workspaceId": "101",
+            "auth": {"mode": "oauth"},
+        },
+        lambda _: None,
+        httpx.Client(
+            base_url="https://api.tapd.cn",
+            transport=httpx.MockTransport(handler),
+        ),
+    )
+
+    batch = provider.poll("2026-08-15 00:00:00")
+
+    assert batch.tickets == []
+    assert seen_paths[:2] == ["/users/info", "/bugs"]
 
 
 def test_tapd_provider__lists_workspace_versions():
